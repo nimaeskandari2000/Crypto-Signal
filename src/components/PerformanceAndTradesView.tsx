@@ -200,8 +200,7 @@ export const PerformanceAndTradesView: React.FC<PerformanceAndTradesViewProps> =
             </span>
           </p>
           <p className="mt-1 text-xs text-slate-500 dark:text-slate-400 font-mono tabular-nums">
-            معادل: {winRateSummary.userTotalPnlIrt >= 0 ? '+' : ''}
-            {winRateSummary.userTotalPnlIrt.toLocaleString('fa-IR')} تومان
+            محاسبه خالص پس از کسر کارمزد صرافی
           </p>
         </div>
       </section>
@@ -220,7 +219,7 @@ export const PerformanceAndTradesView: React.FC<PerformanceAndTradesViewProps> =
               </span>
             </h2>
             <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-              هر سیگنالی را که در تب «سیگنال‌ها» با دکمه «ثبت عملی کردن معامله» ثبت کنید، در این جدول قرار می‌گیرد و تغییرات قیمت، رسیدن به TP1 (ریسک‌فری) و سود/زیان تومانی و تتری آن پایش و به تلگرام شما ارسال می‌شود.
+              هر سیگنالی را که در تب «سیگنال‌ها» با دکمه «ثبت عملی کردن معامله» ثبت کنید، در این جدول قرار می‌گیرد و تغییرات قیمت، رسیدن به TP1 (ریسک‌فری) و سود/زیان تتری و مضرب R آن پایش و به تلگرام شما ارسال می‌شود.
             </p>
           </div>
           {telegramFeedback && (
@@ -238,7 +237,7 @@ export const PerformanceAndTradesView: React.FC<PerformanceAndTradesViewProps> =
                 <th className="py-3 px-4 font-medium">افق زمانی و مدل</th>
                 <th className="py-3 px-4 font-medium">ورود ثبت‌شده و حجم</th>
                 <th className="py-3 px-4 font-medium">قیمت فعلی و درصد تغییر</th>
-                <th className="py-3 px-4 font-medium">سود / زیان لحظه‌ای</th>
+                <th className="py-3 px-4 font-medium">سود / زیان لحظه‌ای (USDT / R)</th>
                 <th className="py-3 px-4 font-medium">حد ضرر و اهداف</th>
                 <th className="py-3 px-4 font-medium">وضعیت پایش</th>
                 <th className="py-3 px-4 font-medium">ارسال تلگرام و مدیریت</th>
@@ -289,10 +288,10 @@ export const PerformanceAndTradesView: React.FC<PerformanceAndTradesViewProps> =
 
                       <td className="py-3.5 px-4 font-mono tabular-nums">
                         <div className="text-slate-900 dark:text-slate-100 font-medium">
-                          ورود: <span className="ltr-num">${trade.entryPriceUsdt.toLocaleString('en-US')}</span> ({trade.entryPriceIrt.toLocaleString('fa-IR')} ت)
+                          ورود: <span className="ltr-num">${trade.entryPriceUsdt.toLocaleString('en-US')} USDT</span>
                         </div>
                         <div className="text-slate-500 dark:text-slate-400 mt-0.5">
-                          حجم: <span className="ltr-num">{trade.quantityAsset} {trade.baseAsset}</span> ({trade.notionalIrt.toLocaleString('fa-IR')} ت)
+                          حجم: <span className="ltr-num">{trade.quantityAsset} {trade.baseAsset}</span> (<span className="ltr-num">${trade.notionalUsdt.toLocaleString('en-US')}</span>)
                         </div>
                       </td>
 
@@ -350,13 +349,12 @@ export const PerformanceAndTradesView: React.FC<PerformanceAndTradesViewProps> =
                         >
                           <span className="ltr-num">
                             {isPositive ? '+' : ''}
-                            {trade.pnlUsdt} USDT ({isPositive ? '+' : ''}
-                            {trade.unrealizedOrRealizedR}R)
+                            {trade.pnlUsdt} USDT
                           </span>
                         </div>
-                        <div className="text-slate-500 dark:text-slate-400 mt-0.5">
-                          {isPositive ? '+' : ''}
-                          {trade.pnlIrt.toLocaleString('fa-IR')} تومان
+                        <div className="text-slate-500 dark:text-slate-400 mt-0.5 ltr-num">
+                          بازده استاندارد: {isPositive ? '+' : ''}
+                          {trade.unrealizedOrRealizedR}R
                         </div>
                       </td>
 

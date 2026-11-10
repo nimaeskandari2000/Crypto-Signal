@@ -271,12 +271,25 @@ test('Live Market Recalibration, Signal Locking, High-Pump Radar, Forex Tokenize
   const evalResult = evaluateUserExecutedTrade(solTrade, 93.0, 265000);
   assert.equal(evalResult.updatedTrade.status, 'tp1_hit');
 
-  // Verify concise Telegram message includes live price, entry, SL, TP, net R:R, and working link
+  // Verify institutional Telegram signal bulletin includes live price, entry, SL, TP, net R:R, 4-pillar breakdown, and zero Toman equivalents
   const tgMsg = formatTelegramSignalMessage(signals[0], DEFAULT_BOT_SETTINGS);
+  const tgMsg2 = formatTelegramSignalMessage(signals[1], DEFAULT_BOT_SETTINGS);
   assert.ok(tgMsg.startsWith('\u200F'));
+  assert.ok(tgMsg.includes('بولتن'));
   assert.ok(tgMsg.includes('قیمت لحظه‌ای بازار:'));
   assert.ok(tgMsg.includes('افق زمانی'));
   assert.ok(tgMsg.includes('ریسک به ریوارد خالص:'));
+  assert.ok(tgMsg.includes('ماتریس ۴ ستون متعامد:'));
+  assert.ok(!tgMsg.includes('تومان'), 'Signal Telegram message must not contain Toman equivalents');
+  assert.ok(tgMsg.includes('لینک یکتای این پیام:'));
+
+  // Verify every Telegram message gets a strictly unique deep-link URL
+  const url1 = tgMsg.match(/https?:\/\/[^\s]+/)?.[0];
+  const url2 = tgMsg2.match(/https?:\/\/[^\s]+/)?.[0];
+  assert.ok(url1 && url2, 'Both Telegram messages must contain valid URLs');
+  assert.notEqual(url1, url2, 'Each Telegram message must have a strictly unique link');
+  assert.ok(url1.includes('msg=QP-SIGNAL-'), 'Unique link must include msg=QP-SIGNAL- identifier');
+  assert.ok(url1.includes(`signal=${signals[0].id}`), 'Unique link must deep-link to the signal ID');
 
   // Verify formatForTelegramApiHtml adds HTML bolding and clickable anchor tag for Telegram API
   const htmlMsg = formatForTelegramApiHtml(tgMsg);

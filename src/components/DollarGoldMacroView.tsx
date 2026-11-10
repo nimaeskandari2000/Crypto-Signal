@@ -194,7 +194,11 @@ export const DollarGoldMacroView: React.FC<DollarGoldMacroViewProps> = ({
 
   const handleSendTetherSignalTelegram = async () => {
     const RLM = '\u200F';
-    const dailyLink = resolveDailyDashboardLink(settings.dashboardUrl);
+    const dailyLink = resolveDailyDashboardLink(settings.dashboardUrl, {
+      type: 'signal',
+      tab: 'dollar_gold',
+      symbol: 'USDTIRT',
+    });
     const msg = [
       `🟢 سیگنال خرید اسپات: USDT/IRT (تتر / تومان)`,
       `💹 نرخ لحظه‌ای والکس: ${tetherSpotSignal.currentIrt.toLocaleString('fa-IR')} تومان | وضعیت: ${tetherSpotSignal.entryVerdict}`,
@@ -206,7 +210,7 @@ export const DollarGoldMacroView: React.FC<DollarGoldMacroViewProps> = ({
       `🎯 هدف دوم (TP2): ${tetherSpotSignal.tp2Irt.toLocaleString('fa-IR')} تومان (سود خالص: +${tetherSpotSignal.netTp2Pct}%)`,
       `⚖️ ریسک به ریوارد خالص: ${tetherSpotSignal.netRrTp1}R (هدف ۱) | ${tetherSpotSignal.netRrTp2}R (هدف ۲)`,
       `━━━━━━━━━━━━━━━━━━`,
-      `🔗 لینک داشبورد روز: ${dailyLink}`,
+      `🔗 لینک یکتای این پیام: ${dailyLink}`,
     ]
       .map((line) => (line.trim().length > 0 ? `${RLM}${line}` : ''))
       .join('\n');

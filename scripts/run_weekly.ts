@@ -46,7 +46,10 @@ async function main() {
   const activeStrategies = INITIAL_STRATEGIES.filter((s) => s.enabled);
   const topLossReason = INITIAL_POSTMORTEM_TAGS[0];
   const persianDate = getPersianDateLabel();
-  const dailyLink = resolveDailyDashboardLink(DEFAULT_BOT_SETTINGS.dashboardUrl);
+  const dailyLink = resolveDailyDashboardLink(DEFAULT_BOT_SETTINGS.dashboardUrl, {
+    type: 'weekly',
+    tab: 'performance',
+  });
 
   const weeklyReport = [
     `\u200F🏆 گزارش هفتگی عملکرد، کالبدشکافی و کالیبراسیون (QuantPulse)`,
@@ -64,7 +67,7 @@ async function main() {
     `\u200F   ├─ امید ریاضی قهرمان: \u200E+${INITIAL_CHALLENGER.championExpectancyR}R\u200F  |  امید ریاضی رقیب: \u200E+${INITIAL_CHALLENGER.challengerExpectancyR}R\u200F`,
     `\u200F   ╰─ وضعیت ارتقا: آماده تأیید شما در کنسول مدیریت`,
     `\u200F━━━━━━━━━━━━━━━━━━━━━━━━`,
-    `\u200F🔗 لینک داشبورد روز: ${dailyLink}`,
+    `\u200F🔗 لینک یکتای این پیام: ${dailyLink}`,
   ].join('\n');
 
   console.log('\n' + weeklyReport + '\n');

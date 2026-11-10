@@ -187,7 +187,6 @@ export const PumpAndForexView: React.FC<PumpAndForexViewProps> = ({
 
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
             {pumpSignals.map((sig) => {
-              const currentIrt = Math.round(sig.currentPrice * sig.usdtIrtRate);
               return (
                 <div
                   key={sig.id}
@@ -243,9 +242,6 @@ export const PumpAndForexView: React.FC<PumpAndForexViewProps> = ({
                         </span>
                         <div className="font-mono font-bold text-sm text-slate-900 dark:text-slate-100 mt-0.5 flex items-center gap-2">
                           <span className="ltr-num">${formatSmartPrice(sig.currentPrice)} USDT</span>
-                          <span className="text-xs font-normal text-slate-500">
-                            ({currentIrt.toLocaleString('fa-IR')} تومان)
-                          </span>
                         </div>
                       </div>
                       <div className="text-left">
@@ -267,13 +263,13 @@ export const PumpAndForexView: React.FC<PumpAndForexViewProps> = ({
                     <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5 text-xs font-mono tabular-nums">
                       <div className="p-2.5 rounded bg-white dark:bg-slate-900 border border-slate-200/70 dark:border-slate-800">
                         <span className="text-slate-500 font-sans block text-[11px]">
-                          محدوده ورود پله‌ای
+                          محدوده ورود پله‌ای (USDT)
                         </span>
                         <span className="font-semibold text-slate-900 dark:text-slate-100 ltr-num block mt-0.5">
                           ${formatSmartPrice(sig.entryLow)} – ${formatSmartPrice(sig.entryHigh)}
                         </span>
                         <span className="text-[11px] text-slate-500 block mt-0.5">
-                          {sig.entryLowIrt.toLocaleString('fa-IR')} ت
+                          میانگین: <span className="ltr-num">${formatSmartPrice(sig.entryMid)}</span>
                         </span>
                       </div>
 
@@ -323,7 +319,7 @@ export const PumpAndForexView: React.FC<PumpAndForexViewProps> = ({
                               ${formatSmartPrice(sig.tp3Pump)} USDT (+{sig.netProfitTp3Pct}% سود خالص)
                             </span>
                             <span className="text-[11px] text-emerald-700 dark:text-emerald-300 font-sans">
-                              معادل {Math.round(sig.tp3Pump * sig.usdtIrtRate).toLocaleString('fa-IR')} تومان
+                              تارگت موج انفجاری (بدون ریسک پس از TP1)
                             </span>
                           </div>
                         </div>
@@ -435,7 +431,6 @@ export const PumpAndForexView: React.FC<PumpAndForexViewProps> = ({
 
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
             {forexTokenizedSignals.map((sig) => {
-              const currentIrt = Math.round(sig.currentPrice * sig.usdtIrtRate);
               return (
                 <div
                   key={sig.id}
@@ -485,9 +480,6 @@ export const PumpAndForexView: React.FC<PumpAndForexViewProps> = ({
                         </span>
                         <div className="font-mono font-bold text-sm text-slate-900 dark:text-slate-100 mt-0.5 flex items-center gap-2">
                           <span className="ltr-num">${formatSmartPrice(sig.currentPrice)} USDT</span>
-                          <span className="text-xs font-normal text-slate-500">
-                            ({currentIrt.toLocaleString('fa-IR')} تومان)
-                          </span>
                         </div>
                       </div>
                       <div className="text-left">
@@ -503,13 +495,13 @@ export const PumpAndForexView: React.FC<PumpAndForexViewProps> = ({
                     <div className="grid grid-cols-2 gap-2.5 text-xs font-mono tabular-nums">
                       <div className="p-2.5 rounded bg-white dark:bg-slate-900 border border-slate-200/70 dark:border-slate-800">
                         <span className="text-slate-500 font-sans block text-[11px]">
-                          محدوده ورود (تتر و تومان)
+                          محدوده ورود پله‌ای (USDT)
                         </span>
                         <span className="font-semibold text-slate-900 dark:text-slate-100 ltr-num block mt-0.5">
                           ${formatSmartPrice(sig.entryLow)} – ${formatSmartPrice(sig.entryHigh)}
                         </span>
                         <span className="text-[11px] text-slate-500 block mt-0.5">
-                          {sig.entryLowIrt.toLocaleString('fa-IR')} تا {sig.entryHighIrt.toLocaleString('fa-IR')} ت
+                          میانگین: <span className="ltr-num">${formatSmartPrice(sig.entryMid)}</span>
                         </span>
                       </div>
 
@@ -520,8 +512,8 @@ export const PumpAndForexView: React.FC<PumpAndForexViewProps> = ({
                         <span className="font-semibold text-rose-600 dark:text-rose-400 ltr-num block mt-0.5">
                           ${formatSmartPrice(sig.stop)} (−{sig.stopDistancePct}%)
                         </span>
-                        <span className="text-[11px] text-slate-500 block mt-0.5">
-                          معادل {sig.stopIrt.toLocaleString('fa-IR')} تومان
+                        <span className="text-[11px] text-slate-500 block mt-0.5 font-sans">
+                          ریسک معیار: −1.00R
                         </span>
                       </div>
 
@@ -533,7 +525,7 @@ export const PumpAndForexView: React.FC<PumpAndForexViewProps> = ({
                           ${formatSmartPrice(sig.tp1)} (خالص +{sig.netProfitTp1Pct}%)
                         </span>
                         <span className="text-[11px] text-slate-500 block mt-0.5">
-                          معادل {sig.tp1Irt.toLocaleString('fa-IR')} ت ({sig.netRrTp1}R)
+                          نسبت R:R خالص: {sig.netRrTp1}R
                         </span>
                       </div>
 
@@ -545,7 +537,7 @@ export const PumpAndForexView: React.FC<PumpAndForexViewProps> = ({
                           ${formatSmartPrice(sig.tp2)} (خالص +{sig.netProfitTp2Pct}%)
                         </span>
                         <span className="text-[11px] text-slate-500 block mt-0.5">
-                          معادل {sig.tp2Irt.toLocaleString('fa-IR')} ت ({sig.netRrTp2}R)
+                          نسبت R:R خالص: {sig.netRrTp2}R
                         </span>
                       </div>
                     </div>

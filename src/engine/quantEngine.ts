@@ -115,9 +115,18 @@ export function isPlaceholderUrl(url?: string): boolean {
   );
 }
 
-export function resolveDailyDashboardLink(dashboardUrl?: string): string {
-  const dayKey = new Date().toISOString().slice(0, 10);
+let telegramLinkSequence = 0;
 
+export interface TelegramLinkContext {
+  type?: 'signal' | 'radar' | 'locked' | 'trade' | 'performance' | 'macro' | 'weekly' | 'test';
+  tab?: 'signals' | 'pump_forex' | 'dollar_gold' | 'performance' | 'settings';
+  signalId?: string;
+  symbol?: string;
+  tradeId?: string;
+  filter?: 'all' | 'active' | 'locked' | 'closed';
+}
+
+export function resolveBaseDashboardUrl(dashboardUrl?: string): string {
   // 1. If running in GitHub Actions (GITHUB_REPOSITORY is set) and no custom APP_URL override is provided,
   // automatically resolve to the user's GitHub Pages URL (`https://<owner>.github.io/<repo>`)
   if (
@@ -128,29 +137,56 @@ export function resolveDailyDashboardLink(dashboardUrl?: string): string {
   ) {
     const [owner, repo] = process.env.GITHUB_REPOSITORY.split('/');
     if (owner && repo && owner !== 'YOUR-USERNAME') {
-      return `https://${owner.toLowerCase()}.github.io/${repo}/?report=${dayKey}`;
+      return `https://${owner.toLowerCase()}.github.io/${repo}`;
     }
   }
 
   // 2. Explicit custom dashboard URL
   if (dashboardUrl && !isPlaceholderUrl(dashboardUrl)) {
-    const clean = dashboardUrl.trim().replace(/\/+$/, '');
-    return `${clean}/?report=${dayKey}`;
+    return dashboardUrl.trim().split('?')[0].replace(/\/+$/, '');
   }
 
   // 3. Browser window origin + pathname (works both on root domains and GitHub Pages /<repo>/ subpaths)
   if (typeof window !== 'undefined' && window.location?.origin) {
-    const base = (window.location.origin + window.location.pathname).replace(/\/+$/, '');
-    return `${base}/?report=${dayKey}`;
+    return (window.location.origin + window.location.pathname).replace(/\/+$/, '');
   }
 
   // 4. Environment APP_URL
   if (typeof process !== 'undefined' && process.env?.APP_URL && !isPlaceholderUrl(process.env.APP_URL)) {
-    const clean = process.env.APP_URL.trim().replace(/\/+$/, '');
-    return `${clean}/?report=${dayKey}`;
+    return process.env.APP_URL.trim().split('?')[0].replace(/\/+$/, '');
   }
 
-  return `${FALLBACK_LIVE_APP_URL}/?report=${dayKey}`;
+  return FALLBACK_LIVE_APP_URL;
+}
+
+export function resolveDailyDashboardLink(
+  dashboardUrl?: string,
+  context?: TelegramLinkContext
+): string {
+  const base = resolveBaseDashboardUrl(dashboardUrl);
+  const dayKey = new Date().toISOString().slice(0, 10);
+  telegramLinkSequence += 1;
+  const timeToken = Date.now().toString(36).slice(-5);
+  const seqToken = telegramLinkSequence.toString(36).padStart(2, '0');
+  const typePrefix = (context?.type || 'msg').toUpperCase();
+  const cleanSym = (context?.symbol || '')
+    .replace(/[^a-zA-Z0-9]/g, '')
+    .toUpperCase()
+    .slice(0, 10);
+  const msgUid = cleanSym
+    ? `QP-${typePrefix}-${cleanSym}-${timeToken}${seqToken}`
+    : `QP-${typePrefix}-${timeToken}${seqToken}`;
+
+  const params = new URLSearchParams();
+  params.set('report', dayKey);
+  if (context?.tab) params.set('tab', context.tab);
+  if (context?.signalId) params.set('signal', context.signalId);
+  if (cleanSym) params.set('pair', cleanSym);
+  if (context?.tradeId) params.set('trade', context.tradeId);
+  if (context?.filter) params.set('filter', context.filter);
+  params.set('msg', msgUid);
+
+  return `${base}/?${params.toString()}`;
 }
 
 /**
@@ -980,17 +1016,15 @@ export function formatScanRadarTelegramSummary(params: {
   signals: Signal[];
   dashboardUrl?: string;
 }): string {
-  const { dollarGold, usdtIrt, xauUsd, btcPrice, ethPrice, signals, dashboardUrl } = params;
+  const { dollarGold, xauUsd, btcPrice, ethPrice, signals, dashboardUrl } = params;
   const timeFa = getTehranTimeLabel();
   const dateFa = getPersianDateLabel();
-  const dailyLink = resolveDailyDashboardLink(dashboardUrl);
+  const dailyLink = resolveDailyDashboardLink(dashboardUrl, {
+    type: 'radar',
+    tab: 'signals',
+  });
 
-  const wallexIrt = Math.round(dollarGold?.usdtIrtWallex || usdtIrt || 265000);
-  const bitpinIrt = Math.round(dollarGold?.usdtIrtBitpin || wallexIrt - 150);
   const xauOunce = Number((dollarGold?.xauUsdOunce || xauUsd || 4080).toFixed(2));
-  const gold18kIrt =
-    dollarGold?.gold18kMarketIrt ||
-    Math.round(((xauOunce * wallexIrt) / 31.1034768) * 0.75 * 1.007);
 
   const activeLive = signals.filter(
     (s) => s.mode === 'live' && ['pending', 'open', 'tp1'].includes(s.status)
@@ -999,29 +1033,29 @@ export function formatScanRadarTelegramSummary(params: {
   const topSignals = [...activeLive].sort((a, b) => b.score - a.score).slice(0, 5);
 
   const lines: string[] = [
-    `📡 رادار اسکن زنده بازار QuantPulse`,
-    `🕒 زمان اسکن: ${dateFa} • ساعت ${timeFa} تهران`,
+    `🏛 QUANTPULSE | رادار اسکن زنده بازار QuantPulse`,
+    `🕒 زمان مخابره: ${dateFa} • ساعت ${timeFa} به وقت تهران`,
     `━━━━━━━━━━━━━━━━━━━━━━━━`,
-    `📊 ۱. نرخ‌های لحظه‌ای بازار ایران و جهان:`,
-    `   ├─ 💵 تتر والکس: ${wallexIrt.toLocaleString('fa-IR')} تومان | بیت‌پین: ${bitpinIrt.toLocaleString('fa-IR')} تومان`,
-    `   ├─ 🥇 انس جهانی طلا (PAXG): \u200E$${xauOunce.toLocaleString('en-US')}\u200F | طلای ۱۸ عیار: ${gold18kIrt.toLocaleString('fa-IR')} تومان`,
-    `   ╰─ 🌐 BTC: \u200E$${btcPrice.toLocaleString('en-US')}\u200F  |  ETH: \u200E$${ethPrice.toLocaleString('en-US')}\u200F`,
+    `📊 ۱. نبض شاخص‌های مرجع جهانی (Live Benchmark):`,
+    `   ├─ 🌐 بیت‌کوین (BTC): \u200E$${btcPrice.toLocaleString('en-US')} USDT\u200F`,
+    `   ├─ 💎 اتریوم (ETH): \u200E$${ethPrice.toLocaleString('en-US')} USDT\u200F`,
+    `   ╰─ 🥇 انس جهانی طلا (PAXG): \u200E$${xauOunce.toLocaleString('en-US')} USDT\u200F`,
     `━━━━━━━━━━━━━━━━━━━━━━━━`,
-    `🎯 ۲. برترین سیگنال‌های فعال (${activeLive.length} فعال • ${locked.length} قفل‌شده 🔒):`,
+    `🎯 ۲. برترین ستاپ‌های معاملاتی فعال (${activeLive.length} فعال • ${locked.length} قفل‌شده 🔒):`,
   ];
 
   topSignals.forEach((sig, idx) => {
     const lockIcon = sig.isLocked ? '🔒 ' : '';
     lines.push(
-      `   ${idx + 1}. ${lockIcon}${sig.persianName} (\u200E${sig.symbol}\u200F) • امتیاز \u200E${sig.score}/100\u200F`,
-      `      ├─ قیمت زنده: \u200E$${formatSmartPrice(sig.currentPrice)}\u200F | ورود: \u200E$${formatSmartPrice(sig.entryLow)}–$${formatSmartPrice(sig.entryHigh)}\u200F`,
-      `      ╰─ حد ضرر: \u200E$${formatSmartPrice(sig.stop)}\u200F | اهداف: \u200E$${formatSmartPrice(sig.tp1)}\u200F / \u200E$${formatSmartPrice(sig.tp2)}\u200F (\u200E${sig.netRrTp1}R\u200F)`
+      `   ${idx + 1}. ${lockIcon}${sig.persianName} (\u200E${sig.symbol}\u200F) • امتیاز کوانت \u200E${sig.score}/100\u200F`,
+      `      ├─ قیمت لحظه‌ای: \u200E$${formatSmartPrice(sig.currentPrice)}\u200F | محدوده ورود: \u200E$${formatSmartPrice(sig.entryLow)} – $${formatSmartPrice(sig.entryHigh)} USDT\u200F`,
+      `      ╰─ حد ضرر: \u200E$${formatSmartPrice(sig.stop)}\u200F (\u200E-${sig.stopDistancePct}%\u200F) | اهداف: \u200E$${formatSmartPrice(sig.tp1)}\u200F (\u200E+${sig.netRrTp1}R\u200F) / \u200E$${formatSmartPrice(sig.tp2)}\u200F (\u200E+${sig.netRrTp2}R\u200F)`
     );
   });
 
   lines.push(
     `━━━━━━━━━━━━━━━━━━━━━━━━`,
-    `🔗 لینک داشبورد روز: ${dailyLink}`
+    `🔗 لینک یکتای این پیام: ${dailyLink}`
   );
 
   return applyRtlLines(lines);
@@ -1029,7 +1063,7 @@ export function formatScanRadarTelegramSummary(params: {
 
 /**
  * Helper to convert systematic plain-text Telegram messages into rich Telegram HTML
- * with bold headers, clickable dashboard links, and clean BiDi rendering.
+ * with bold headers, clickable unique message links, and clean BiDi rendering.
  */
 export function formatForTelegramApiHtml(rawText: string): string {
   const escaped = rawText
@@ -1041,12 +1075,19 @@ export function formatForTelegramApiHtml(rawText: string): string {
   const htmlLines = lines.map((line, index) => {
     const clean = line.replace(/^\u200F/, '');
 
-    // Make the final dashboard link line a rich clickable HTML anchor + copyable URL
-    if (clean.startsWith('🌐 لینک داشبورد روز:') || clean.startsWith('🔗 لینک داشبورد روز:')) {
+    // Make the final unique link line a rich clickable HTML anchor showing the unique URL and message ID
+    if (
+      clean.startsWith('🌐 لینک داشبورد روز:') ||
+      clean.startsWith('🔗 لینک داشبورد روز:') ||
+      clean.startsWith('🔗 لینک یکتای')
+    ) {
       const urlMatch = clean.match(/https?:\/\/[^\s]+/);
       if (urlMatch) {
-        const url = urlMatch[0];
-        return `\u200F🌐 <b>ورود به کنسول زنده و مدیریت سیگنال‌ها:</b>\n\u200F👉 <a href="${url}">باز کردن مستقیم داشبورد روز (کلیک کنید)</a>`;
+        const rawUrl = urlMatch[0];
+        const unescapedUrl = rawUrl.replace(/&amp;/g, '&');
+        const msgMatch = unescapedUrl.match(/[?&]msg=([^&]+)/);
+        const msgBadge = msgMatch ? ` (\u200E#${msgMatch[1]}\u200F)` : '';
+        return `\u200F🌐 <b>لینک یکتای این پیام در کنسول زنده${msgBadge}:</b>\n\u200F👉 <a href="${rawUrl}">${rawUrl}</a>`;
       }
     }
 
@@ -1082,8 +1123,8 @@ export function formatForTelegramApiHtml(rawText: string): string {
 }
 
 /**
- * 9. SYSTEMATIC, GRAPHICAL & USABLE TELEGRAM SIGNAL CARD
- * Structured with visual tree branches (├─ / ╰─), BiDi-isolated numbers, and clear trading hierarchy.
+ * 9. INSTITUTIONAL QUANT DESK TELEGRAM SIGNAL BULLETIN (PURE USDT & R-MULTIPLES)
+ * Structured with visual tree branches (├─ / ╰─), BiDi-isolated numbers, 4-pillar breakdown, and zero Toman clutter.
  */
 export function formatTelegramSignalMessage(
   signal: Signal,
@@ -1092,12 +1133,12 @@ export function formatTelegramSignalMessage(
 ): string {
   const categoryHeader =
     signal.category === 'high_pump'
-      ? '🚀 سیگنال شکارچی پامپ  |  پتانسیل سود انفجاری'
+      ? '🏛 QUANTPULSE  |  بولتن سیگنال شکارچی پامپ (Volume Breakout)'
       : signal.category === 'forex_tokenized'
-        ? '🌍 سیگنال بازار جهانی  |  فارکس، سهام و کامودیتی'
+        ? '🏛 QUANTPULSE  |  بولتن سیگنال بازار جهانی (Forex & Tokenized RWA)'
         : signal.category === 'gold_dollar'
-          ? '🥇 سیگنال پوشش تورمی  |  طلا و دلار (اسپات)'
-          : '💎 سیگنال خرید اسپات  |  والکس و بیت‌پین';
+          ? '🏛 QUANTPULSE  |  بولتن سیگنال طلای جهانی (PAXG / XAU Spot)'
+          : '🏛 QUANTPULSE  |  بولتن رسمی سیگنال کوانت (Institutional Spot Setup)';
 
   const timeframeFa = signal.timeframe === '1h' ? '۱ ساعته (1H)' : '۴ ساعته (4H)';
   const timeHorizon =
@@ -1111,65 +1152,88 @@ export function formatTelegramSignalMessage(
     (settingsOrSizing && 'dashboardUrl' in settingsOrSizing
       ? settingsOrSizing.dashboardUrl
       : undefined);
-  const dailyLink = resolveDailyDashboardLink(resolvedUrl);
-  const currentIrt = Math.round(signal.currentPrice * signal.usdtIrtRate);
+  const targetTab =
+    signal.category === 'high_pump' || signal.category === 'forex_tokenized'
+      ? 'pump_forex'
+      : 'signals';
+  const dailyLink = resolveDailyDashboardLink(resolvedUrl, {
+    type: 'signal',
+    tab: targetTab,
+    signalId: signal.id,
+    symbol: signal.symbol,
+  });
+
   const gradeBadge =
-    signal.score >= 90 ? 'درجه کیفی +A (ممتاز)' : signal.score >= 82 ? 'درجه کیفی A (عالی)' : 'درجه کیفی +B (معتبر)';
+    signal.score >= 90
+      ? 'گرید +A (ستاپ ممتاز مؤسساتی)'
+      : signal.score >= 82
+        ? 'گرید A (ستاپ تاییدشده کوانت)'
+        : 'گرید +B (ستاپ معتبر ساختاری)';
+
+  const change24hText =
+    signal.change24hPct !== undefined
+      ? ` (\u200E${signal.change24hPct >= 0 ? '+' : ''}${signal.change24hPct}% 24h\u200F)`
+      : '';
 
   const lines: string[] = [
     `${categoryHeader}`,
     signal.isLocked
-      ? `🔒 وضعیت پایش: قفل‌شده در رادار خودکار ۵ دقیقه‌ای`
-      : `📡 منبع نرخ: ${signal.liveSourceLabel || 'والکس + کراکن (زنده)'}`,
+      ? `🔒 وضعیت پایش: قفل‌شده در رادار خودکار ۵ دقیقه‌ای  |  فید زنده: ${signal.liveSourceLabel || 'کراکن + والکس'}`
+      : `📡 فید داده: ${signal.liveSourceLabel || 'کراکن + والکس (زنده)'}  |  تایم‌فریم اجرایی: ${timeframeFa}`,
     `━━━━━━━━━━━━━━━━━━━━━━━━`,
-    `📊 ۱. شناسنامه و نبض لحظه‌ای دارایی:`,
-    `   ├─ 🪙 ارز: ${signal.persianName} (\u200E${signal.symbol}\u200F)`,
-    `   ├─ ⭐ امتیاز کوانت: \u200E${signal.score}/100\u200F (${gradeBadge})`,
-    `   ├─ 💹 قیمت لحظه‌ای بازار: \u200E${formatSmartPrice(signal.currentPrice)} USDT\u200F (${currentIrt.toLocaleString('fa-IR')} تومان)`,
-    `   ╰─ ⏳ افق زمانی: ${timeHorizon} • تایم‌فریم ${timeframeFa}`,
+    `📊 ۱. شناسنامه کوانت و ساختار بازار:`,
+    `   ├─ 🪙 نماد معاملاتی: ${signal.persianName} (\u200E${signal.symbol}\u200F)`,
+    `   ├─ ⭐ امتیاز کوانت: \u200E${signal.score}/100\u200F • ${gradeBadge} (نرخ برد براکت: \u200E${signal.bracketStat.tp1WinRatePct}%\u200F)`,
+    `   ├─ 📐 مدل استراتژی: ${signal.strategyLabel} • روند کلان (HTF): ${signal.htfTrend}`,
+    `   ├─ 💹 قیمت لحظه‌ای بازار: \u200E$${formatSmartPrice(signal.currentPrice)} USDT\u200F${change24hText}`,
+    `   ╰─ ⏳ افق زمانی معامله: ${timeHorizon}`,
   ];
 
   if (signal.category === 'high_pump' && signal.volumeSurgeMultiplier) {
     lines.push(
-      `   ⚡ محرک پامپ: جهش حجم \u200E${signal.volumeSurgeMultiplier}x\u200F برابر میانگین (سقف مجاز ورود: \u200E${signal.maxAllocationPct || 3.5}%\u200F سرمایه)`
+      `   ⚡ آنومالی حجم پامپ: جهش حجم \u200E${signal.volumeSurgeMultiplier}x\u200F برابر میانگین (سقف تخصیص مجاز: \u200E${signal.maxAllocationPct || 3.5}%\u200F پرتفوی)`
     );
   } else if (signal.category === 'forex_tokenized' && signal.underlyingMarketFa) {
-    lines.push(`   🏛 بازار پایه: ${signal.underlyingMarketFa}`);
+    lines.push(`   🏛 دارایی پایه (Underlying): ${signal.underlyingMarketFa}`);
   }
 
   lines.push(
     `━━━━━━━━━━━━━━━━━━━━━━━━`,
-    `🎯 ۲. سطوح دقیق سفارش‌گذاری (ورود، حد ضرر و اهداف):`,
-    `🟢 محدوده ورود پله‌ای (Entry Zone):`,
-    `   ├─ پایه تتری: \u200E${formatSmartPrice(signal.entryLow)}\u200F تا \u200E${formatSmartPrice(signal.entryHigh)} USDT\u200F`,
-    `   ╰─ معادل تومانی: ${signal.entryLowIrt.toLocaleString('fa-IR')} تا ${signal.entryHighIrt.toLocaleString('fa-IR')} تومان`,
-    `🛑 حد ضرر قطعی (Stop Loss):`,
-    `   ╰─ \u200E${formatSmartPrice(signal.stop)} USDT\u200F (${signal.stopIrt.toLocaleString('fa-IR')} تومان | ریسک: \u200E-${signal.stopDistancePct}%\u200F)`,
-    `💰 اهداف سیو سود (Take Profits):`,
-    `   ├─ ✅ هدف ۱ (TP1): \u200E${formatSmartPrice(signal.tp1)} USDT\u200F (سود خالص: \u200E+${signal.netProfitTp1Pct}%\u200F • سیو ۵۰٪ و ریسک‌فری)`,
+    `🎯 ۲. نقشه اجرای سفارش و مدیریت پوزیشن (USDT):`,
+    `🟢 محدوده ورود پله‌ای (Limit Entry Zone):`,
+    `   ├─ بازه مجاز سفارش‌گذاری: \u200E$${formatSmartPrice(signal.entryLow)} – $${formatSmartPrice(signal.entryHigh)} USDT\u200F`,
+    `   ╰─ میانگین بهینه ورود (Entry Mid): \u200E$${formatSmartPrice(signal.entryMid)} USDT\u200F`,
+    `🛑 حد ضرر ساختاری (Invalidation Stop Loss):`,
+    `   ╰─ \u200E$${formatSmartPrice(signal.stop)} USDT\u200F (فاصله ابطال: \u200E-${signal.stopDistancePct}%\u200F | ریسک معیار: \u200E-1.00R\u200F)`,
+    `💰 اهداف سیو سود پله‌ای (Take-Profit Targets):`,
+    `   ├─ ✅ هدف ۱ (TP1): \u200E$${formatSmartPrice(signal.tp1)} USDT\u200F (سود خالص: \u200E+${signal.netProfitTp1Pct}%\u200F | \u200E+${signal.netRrTp1}R\u200F • سیو ۵۰٪ و ریسک‌فری)`,
     signal.tp3Pump && signal.netProfitTp3Pct
-      ? `   ├─ 🎯 هدف ۲ (TP2): \u200E${formatSmartPrice(signal.tp2)} USDT\u200F (سود خالص: \u200E+${signal.netProfitTp2Pct}%\u200F • موج دوم)`
-      : `   ╰─ 🏆 هدف ۲ (TP2): \u200E${formatSmartPrice(signal.tp2)} USDT\u200F (سود خالص: \u200E+${signal.netProfitTp2Pct}%\u200F • تسویه کامل)`
+      ? `   ├─ 🎯 هدف ۲ (TP2): \u200E$${formatSmartPrice(signal.tp2)} USDT\u200F (سود خالص: \u200E+${signal.netProfitTp2Pct}%\u200F | \u200E+${signal.netRrTp2}R\u200F • سیو ۳۰٪ موج دوم)`
+      : `   ╰─ 🏆 هدف ۲ (TP2): \u200E$${formatSmartPrice(signal.tp2)} USDT\u200F (سود خالص: \u200E+${signal.netProfitTp2Pct}%\u200F | \u200E+${signal.netRrTp2}R\u200F • تسویه کامل پوزیشن)`
   );
 
   if (signal.tp3Pump && signal.netProfitTp3Pct) {
     lines.push(
-      `   ╰─ 🔥 هدف ۳ پامپ (TP3): \u200E${formatSmartPrice(signal.tp3Pump)} USDT\u200F (سود خالص: \u200E+${signal.netProfitTp3Pct}%\u200F • تارگت انفجاری)`
+      `   ╰─ 🔥 هدف ۳ پامپ (TP3): \u200E$${formatSmartPrice(signal.tp3Pump)} USDT\u200F (سود خالص: \u200E+${signal.netProfitTp3Pct}%\u200F • تارگت موج انفجاری)`
     );
   }
 
   lines.push(
     `━━━━━━━━━━━━━━━━━━━━━━━━`,
-    `⚖️ ۳. نسبت ریسک به ریوارد خالص: \u200E${signal.netRrTp1}R\u200F (هدف ۱)  |  \u200E${signal.netRrTp2}R\u200F (هدف ۲)`
+    `⚖️ ۳. تحلیل ریسک به ریوارد و منطق تکنیکال:`,
+    `   ├─ نسبت ریسک به ریوارد خالص: \u200E${signal.netRrTp1}R\u200F (هدف ۱)  |  \u200E${signal.netRrTp2}R\u200F (هدف ۲) • امید ریاضی: \u200E+${signal.bracketStat.avgNetR}R\u200F`,
+    `   ├─ ماتریس ۴ ستون متعامد: ساختار \u200E${signal.pillars.structureClarity}/35\u200F | رژیم \u200E${signal.pillars.regimeAlignment}/25\u200F | حجم \u200E${signal.pillars.volumeAndDepth}/25\u200F | کارایی \u200E${signal.pillars.netRrEfficiency}/15\u200F`,
+    `   ├─ منطق تکنیکال: ${signal.rationale}`,
+    `   ╰─ پروتکل مدیریت ریسک: پس از لمس TP1، حد ضرر نیمه دوم پوزیشن به نقطه ورود (\u200E$${formatSmartPrice(signal.entryMid)}\u200F) منتقل شود.`
   );
 
   if (signal.isLocked && signal.lockedMonitoringNote) {
-    lines.push(`📡 وضعیت قفل: ${signal.lockedMonitoringNote}`);
+    lines.push(`📡 وضعیت فعلی قفل پایش: ${signal.lockedMonitoringNote}`);
   }
 
   lines.push(
     `━━━━━━━━━━━━━━━━━━━━━━━━`,
-    `🔗 لینک داشبورد روز: ${dailyLink}`
+    `🔗 لینک یکتای این پیام: ${dailyLink}`
   );
 
   return applyRtlLines(lines);
@@ -1182,7 +1246,11 @@ export function formatLockedSignalsTelegramReport(
   lockedSignals: Signal[],
   dashboardUrl?: string
 ): string {
-  const dailyLink = resolveDailyDashboardLink(dashboardUrl);
+  const dailyLink = resolveDailyDashboardLink(dashboardUrl, {
+    type: 'locked',
+    tab: 'signals',
+    filter: 'locked',
+  });
   const timeFa = getTehranTimeLabel();
 
   if (lockedSignals.length === 0) {
@@ -1191,7 +1259,7 @@ export function formatLockedSignalsTelegramReport(
       `🕒 ساعت بروزرسانی: ${timeFa} به وقت تهران`,
       `━━━━━━━━━━━━━━━━━━━━━━━━`,
       `ℹ️ در حال حاضر هیچ سیگنالی در لیست قفل پایش قرار ندارد.`,
-      `🔗 لینک داشبورد روز: ${dailyLink}`,
+      `🔗 لینک یکتای این پیام: ${dailyLink}`,
     ]);
   }
 
@@ -1199,7 +1267,7 @@ export function formatLockedSignalsTelegramReport(
 
   const lines: string[] = [
     `🔐 گزارش پایش خودکار سیگنال‌های قفل‌شده`,
-    `🕒 بروزرسانی: ساعت ${timeFa} تهران  |  تعداد قفل فعال: ${lockedSignals.length} مورد`,
+    `🕒 بروزرسانی: ساعت ${timeFa} تهران  |  تعداد قفل فعال: ${lockedSignals.length} ستاپ`,
     `━━━━━━━━━━━━━━━━━━━━━━━━`,
   ];
 
@@ -1213,8 +1281,8 @@ export function formatLockedSignalsTelegramReport(
 
     lines.push(
       `${numEmoji} 🪙 ${sig.persianName} (\u200E${sig.symbol}\u200F) • ${sig.timeHorizonFa}`,
-      `   ├─ 🎯 محدوده ورود قفل‌شده: \u200E$${formatSmartPrice(sig.entryLow)} – $${formatSmartPrice(sig.entryHigh)}\u200F`,
-      `   ├─ 💹 قیمت لحظه‌ای بازار: \u200E$${formatSmartPrice(sig.currentPrice)}\u200F (\u200E${chSign}${chVal}%\u200F | \u200E${rSign}${rVal}R\u200F)`,
+      `   ├─ 🎯 محدوده ورود قفل‌شده: \u200E$${formatSmartPrice(sig.entryLow)} – $${formatSmartPrice(sig.entryHigh)} USDT\u200F`,
+      `   ├─ 💹 قیمت لحظه‌ای بازار: \u200E$${formatSmartPrice(sig.currentPrice)} USDT\u200F (\u200E${chSign}${chVal}%\u200F | \u200E${rSign}${rVal}R\u200F)`,
       `   ├─ 🛑 حد ضرر: \u200E$${formatSmartPrice(sig.stop)}\u200F  |  🏆 اهداف: \u200E$${formatSmartPrice(sig.tp1)}\u200F (\u200E+${sig.netProfitTp1Pct}%\u200F) / \u200E$${formatSmartPrice(sig.tp2)}\u200F (\u200E+${sig.netProfitTp2Pct}%\u200F)`,
       `   ╰─ 📌 وضعیت: ${cleanNote}`,
       `────────────────────────`
@@ -1223,52 +1291,58 @@ export function formatLockedSignalsTelegramReport(
 
   lines.push(
     `⏱ سیکل بعدی بررسی خودکار: ۵ دقیقه دیگر`,
-    `🔗 لینک داشبورد روز: ${dailyLink}`
+    `🔗 لینک یکتای این پیام: ${dailyLink}`
   );
   return applyRtlLines(lines);
 }
 
 /**
- * 10. SYSTEMATIC USER-EXECUTED TRADE TELEGRAM UPDATE
+ * 10. SYSTEMATIC USER-EXECUTED TRADE TELEGRAM UPDATE (PURE USDT & R-MULTIPLES)
  */
 export function formatExecutedTradeTelegramMessage(
   trade: UserExecutedTrade,
   eventType: 'entry_confirmed' | 'live_update' | 'tp1_risk_free' | 'closed',
   dashboardUrl?: string
 ): string {
-  const dailyLink = resolveDailyDashboardLink(dashboardUrl);
+  const dailyLink = resolveDailyDashboardLink(dashboardUrl, {
+    type: 'trade',
+    tab: 'performance',
+    tradeId: trade.id,
+    symbol: trade.symbol,
+  });
   const exchangeFa = trade.exchange === 'wallex' ? 'والکس (Wallex)' : 'بیت‌پین (Bitpin)';
 
   const headerTitle =
     eventType === 'entry_confirmed'
-      ? '📌 ثبت رسمی ورود معامله شما و شروع پایش زنده'
+      ? '📌 ثبت رسمی ورود معامله و شروع پایش زنده کوانت'
       : eventType === 'tp1_risk_free'
-        ? '🎉 لمس هدف اول (TP1)  |  معامله شما ریسک‌فری شد'
+        ? '🎉 لمس هدف اول (TP1)  |  پوزیشن شما ریسک‌فری شد'
         : eventType === 'closed'
-          ? '🏁 تسویه و بسته شدن معامله ثبت‌شده شما'
-          : '📡 گزارش لحظه‌ای سود و زیان معامله فعال شما';
+          ? '🏁 تسویه و بسته شدن رسمی معامله ثبت‌شده شما'
+          : '📡 گزارش لحظه‌ای وضعیت و بازده معامله فعال شما';
 
   const changeSign = trade.priceChangePct >= 0 ? '+' : '';
   const pnlSign = trade.pnlUsdt >= 0 ? '+' : '';
 
   const lines: string[] = [
     `${headerTitle}`,
-    `🪙 دارایی: ${trade.persianName} (\u200E${trade.symbol}\u200F) • صرافی ${exchangeFa}`,
-    `⏳ افق زمانی: ${trade.timeHorizonFa}`,
+    `🪙 نماد معاملاتی: ${trade.persianName} (\u200E${trade.symbol}\u200F) • صرافی ${exchangeFa}`,
+    `⏳ افق زمانی: ${trade.timeHorizonFa}  |  مدل: ${trade.strategyLabel}`,
     `━━━━━━━━━━━━━━━━━━━━━━━━`,
-    `📥 ۱. جزئیات قیمت ورود و نرخ لحظه‌ای:`,
-    `   ├─ قیمت ورود ثبت‌شده شما: \u200E${formatSmartPrice(trade.entryPriceUsdt)} USDT\u200F (${trade.entryPriceIrt.toLocaleString('fa-IR')} تومان)`,
-    `   ╰─ قیمت لحظه‌ای بازار: \u200E${formatSmartPrice(trade.currentPriceUsdt)} USDT\u200F (تغییر: \u200E${changeSign}${trade.priceChangePct}%\u200F)`,
-    `💎 ۲. سود و زیان خالص لحظه‌ای (PnL):`,
-    `   ├─ برآیند تتری: \u200E${pnlSign}${trade.pnlUsdt.toLocaleString('en-US')} USDT\u200F (\u200E${pnlSign}${trade.unrealizedOrRealizedR}R\u200F)`,
-    `   ╰─ برآیند تومانی: ${pnlSign}${trade.pnlIrt.toLocaleString('fa-IR')} تومان`,
+    `📥 ۱. جزئیات قیمت ورود و نرخ لحظه‌ای (USDT):`,
+    `   ├─ قیمت ورود ثبت‌شده شما: \u200E$${formatSmartPrice(trade.entryPriceUsdt)} USDT\u200F`,
+    `   ├─ حجم پوزیشن: \u200E${trade.quantityAsset} ${trade.baseAsset}\u200F (\u200E$${trade.notionalUsdt.toLocaleString('en-US')} USDT\u200F)`,
+    `   ╰─ قیمت لحظه‌ای بازار: \u200E$${formatSmartPrice(trade.currentPriceUsdt)} USDT\u200F (تغییر از ورود: \u200E${changeSign}${trade.priceChangePct}%\u200F)`,
+    `💎 ۲. سود و زیان خالص لحظه‌ای (Net PnL & R-Multiple):`,
+    `   ├─ برآیند خالص دلاری: \u200E${pnlSign}${trade.pnlUsdt.toLocaleString('en-US')} USDT\u200F`,
+    `   ╰─ بازده استاندارد ریسک: \u200E${pnlSign}${trade.unrealizedOrRealizedR}R\u200F`,
     `🧭 ۳. سطوح مدیریت ریسک و اهداف معامله:`,
-    `   ├─ 🛑 حد ضرر فعال: \u200E${formatSmartPrice(trade.stopUsdt)} USDT\u200F`,
-    `   ├─ 🎯 هدف اول (TP1): \u200E${formatSmartPrice(trade.tp1Usdt)} USDT\u200F`,
-    `   ╰─ 🏆 هدف دوم (TP2): \u200E${formatSmartPrice(trade.tp2Usdt)} USDT\u200F`,
+    `   ├─ 🛑 حد ضرر فعال (SL): \u200E$${formatSmartPrice(trade.stopUsdt)} USDT\u200F`,
+    `   ├─ 🎯 هدف اول (TP1): \u200E$${formatSmartPrice(trade.tp1Usdt)} USDT\u200F`,
+    `   ╰─ 🏆 هدف دوم (TP2): \u200E$${formatSmartPrice(trade.tp2Usdt)} USDT\u200F`,
     `📋 وضعیت عملیاتی: ${trade.monitoringNote}`,
     `━━━━━━━━━━━━━━━━━━━━━━━━`,
-    `🔗 لینک داشبورد روز: ${dailyLink}`,
+    `🔗 لینک یکتای این پیام: ${dailyLink}`,
   ];
 
   return applyRtlLines(lines);
@@ -1282,7 +1356,10 @@ export function formatDailyPerformanceTelegramReport(
   winRateSummary: SignalWinRateSummary,
   dashboardUrl?: string
 ): string {
-  const dailyLink = resolveDailyDashboardLink(dashboardUrl);
+  const dailyLink = resolveDailyDashboardLink(dashboardUrl, {
+    type: 'performance',
+    tab: 'performance',
+  });
   const netSign = report.netRealizedR >= 0 ? '+' : '';
   const userSign = winRateSummary.userTotalPnlUsdt >= 0 ? '+' : '';
 
@@ -1290,21 +1367,20 @@ export function formatDailyPerformanceTelegramReport(
     `🏆 کارنامه روزانه نرخ موفقیت سیگنال‌ها (${report.persianDate})`,
     `━━━━━━━━━━━━━━━━━━━━━━━━`,
     `📊 ۱. آمار وضعیت سیگنال‌های صادرشده:`,
-    `   ├─ کل سیگنال‌های فعال و بررسی‌شده: ${report.totalSignalsIssued} مورد`,
-    `   ├─ سیگنال‌های باز و در جریان: ${report.openCount} مورد`,
+    `   ├─ کل سیگنال‌های فعال و بررسی‌شده: ${report.totalSignalsIssued} ستاپ`,
+    `   ├─ سیگنال‌های باز و در جریان: ${report.openCount} ستاپ`,
     `   ├─ بسته در هدف دوم (TP2 — سود کامل): ${report.wonTp2Count} مورد 🎯`,
     `   ├─ بسته در هدف اول (TP1 — سیو سود): ${report.wonTp1Count} مورد ✅`,
     `   ╰─ بسته با حد ضرر (SL): ${report.stoppedSlCount} مورد 🛑`,
-    `📈 ۲. شاخص‌های دقت آماری و بازدهی:`,
+    `📈 ۲. شاخص‌های دقت آماری و بازدهی کوانت:`,
     `   ├─ نرخ موفقیت (Win Rate) روز: \u200E${report.winRatePct}%\u200F`,
     `   ├─ برآیند خالص تحقق‌یافته: \u200E${netSign}${report.netRealizedR}R\u200F`,
     `   ╰─ فاکتور سود سامانه (Profit Factor): \u200E${winRateSummary.profitFactor}\u200F`,
-    `💼 ۳. عملکرد معاملات عملی‌شده توسط شما:`,
-    `   ├─ تعداد معاملات ثبت‌شده شما: ${winRateSummary.userTradesTotal} مورد`,
-    `   ├─ سود / زیان تتری شما: \u200E${userSign}${winRateSummary.userTotalPnlUsdt} USDT\u200F`,
-    `   ╰─ سود / زیان تومانی شما: ${userSign}${winRateSummary.userTotalPnlIrt.toLocaleString('fa-IR')} تومان`,
+    `💼 ۳. عملکرد معاملات ثبت‌شده توسط شما:`,
+    `   ├─ تعداد معاملات ثبت‌شده: ${winRateSummary.userTradesTotal} مورد`,
+    `   ╰─ برآیند خالص دلاری شما: \u200E${userSign}${winRateSummary.userTotalPnlUsdt} USDT\u200F`,
     `━━━━━━━━━━━━━━━━━━━━━━━━`,
-    `🔗 لینک داشبورد روز: ${dailyLink}`,
+    `🔗 لینک یکتای این پیام: ${dailyLink}`,
   ];
 
   return applyRtlLines(lines);
@@ -1349,7 +1425,10 @@ export function formatDailyTelegramReport(params: {
   });
 
   const persianDate = getPersianDateLabel(dollarGold.updatedAt);
-  const dailyLink = resolveDailyDashboardLink(settings.dashboardUrl);
+  const dailyLink = resolveDailyDashboardLink(settings.dashboardUrl, {
+    type: 'macro',
+    tab: 'dollar_gold',
+  });
 
   const shortH = dollarGold.multiHorizonAnalysis?.[0];
   const medH = dollarGold.multiHorizonAnalysis?.[1];
@@ -1433,7 +1512,7 @@ export function formatDailyTelegramReport(params: {
     `   ├─ دامیننس BTC: \u200E${btcDominance}%\u200F  |  شاخص ترس و طمع: \u200E${fearGreedIndex}\u200F (${fearGreedLabel})`,
     `   ╰─ سیگنال‌های فعال امروز: ${activeSignalsCount} مورد  |  نرخ برد: \u200E${recent30WinRatePct}%\u200F (\u200E+${recent30NetR}R\u200F)`,
     `━━━━━━━━━━━━━━━━━━━━━━━━`,
-    `🔗 لینک داشبورد روز: ${dailyLink}`
+    `🔗 لینک یکتای این پیام: ${dailyLink}`
   );
 
   return applyRtlLines(lines);

@@ -43,6 +43,8 @@ interface SignalsWorkspaceProps {
   onSendAllActiveSignalsToTelegram?: () => Promise<void>;
   onSendLockedSignalsReport?: () => Promise<void>;
   telegramFeedback: string | null;
+  initialSelectedSignalId?: string;
+  initialStatusFilter?: 'all' | 'active' | 'locked' | 'closed';
 }
 
 const STATUS_LABELS: Record<SignalStatus, string> = {
@@ -68,14 +70,32 @@ export const SignalsWorkspace: React.FC<SignalsWorkspaceProps> = ({
   onSendAllActiveSignalsToTelegram,
   onSendLockedSignalsReport,
   telegramFeedback,
+  initialSelectedSignalId,
+  initialStatusFilter,
 }) => {
-  const [selectedSignalId, setSelectedSignalId] = useState<string>(signals[0]?.id || '');
+  const [selectedSignalId, setSelectedSignalId] = useState<string>(
+    initialSelectedSignalId || signals[0]?.id || ''
+  );
   const [categoryFilter, setCategoryFilter] = useState<'all' | AssetCategory>('all');
-  const [statusFilter, setStatusFilter] = useState<'all' | 'active' | 'locked' | 'closed'>('all');
+  const [statusFilter, setStatusFilter] = useState<'all' | 'active' | 'locked' | 'closed'>(
+    initialStatusFilter || 'all'
+  );
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [isSendingAll, setIsSendingAll] = useState<boolean>(false);
   const [isSendingLocked, setIsSendingLocked] = useState<boolean>(false);
   const [lockingId, setLockingId] = useState<string | null>(null);
+
+  React.useEffect(() => {
+    if (initialSelectedSignalId && signals.some((s) => s.id === initialSelectedSignalId)) {
+      setSelectedSignalId(initialSelectedSignalId);
+    }
+  }, [initialSelectedSignalId, signals]);
+
+  React.useEffect(() => {
+    if (initialStatusFilter) {
+      setStatusFilter(initialStatusFilter);
+    }
+  }, [initialStatusFilter]);
 
   // Custom calculator overrides
   const [calcExchange, setCalcExchange] = useState<'wallex' | 'bitpin'>(settings.defaultExchangeIr);
@@ -520,8 +540,8 @@ export const SignalsWorkspace: React.FC<SignalsWorkspaceProps> = ({
             <thead>
               <tr className="border-b border-slate-200 dark:border-slate-800 text-xs text-slate-500 dark:text-slate-400 bg-slate-50/60 dark:bg-slate-950/50">
                 <th className="py-3 px-4 font-medium">ارز و دسته</th>
-                <th className="py-3 px-4 font-medium">قیمت لحظه‌ای بازار (زنده)</th>
-                <th className="py-3 px-4 font-medium">محدوده ورود (تتر و تومان)</th>
+                <th className="py-3 px-4 font-medium">قیمت لحظه‌ای بازار (USDT)</th>
+                <th className="py-3 px-4 font-medium">محدوده ورود پله‌ای (USDT)</th>
                 <th className="py-3 px-4 font-medium">حد ضرر (SL)</th>
                 <th className="py-3 px-4 font-medium">اهداف و سود خالص (TP1 / TP2)</th>
                 <th className="py-3 px-4 font-medium">R:R خالص و امتیاز</th>
@@ -539,7 +559,6 @@ export const SignalsWorkspace: React.FC<SignalsWorkspaceProps> = ({
                 filteredSignals.map((sig) => {
                   const isSelected = selectedSignal?.id === sig.id;
                   const isUserExecuted = executedTrades.some((t) => t.signalId === sig.id);
-                  const liveIrt = Math.round(sig.currentPrice * sig.usdtIrtRate);
                   return (
                     <tr
                       key={sig.id}
@@ -577,10 +596,19 @@ export const SignalsWorkspace: React.FC<SignalsWorkspaceProps> = ({
                         <div className="font-bold text-slate-900 dark:text-slate-100">
                           <span className="ltr-num">${formatSmartPrice(sig.currentPrice)}</span>
                         </div>
-                        <div className="text-slate-500 dark:text-slate-400 mt-0.5">
-                          {liveIrt.toLocaleString('fa-IR')} ت
-                        </div>
-                        <div className="text-[10px] font-sans text-emerald-600 dark:text-emerald-400 mt-0.5">
+                        {sig.change24hPct !== undefined && (
+                          <div
+                            className={`text-[11px] font-medium mt-0.5 ltr-num ${
+                              sig.change24hPct >= 0
+                                ? 'text-emerald-600 dark:text-emerald-400'
+                                : 'text-rose-600 dark:text-rose-400'
+                            }`}
+                          >
+                            {sig.change24hPct >= 0 ? '+' : ''}
+                            {sig.change24hPct}% (24h)
+                          </div>
+                        )}
+                        <div className="text-[10px] font-sans text-slate-500 dark:text-slate-400 mt-0.5">
                           {sig.liveSourceLabel || 'والکس + کراکن (زنده)'}
                         </div>
                       </td>
@@ -589,8 +617,8 @@ export const SignalsWorkspace: React.FC<SignalsWorkspaceProps> = ({
                         <div className="text-slate-900 dark:text-slate-100 font-medium">
                           <span className="ltr-num">${formatSmartPrice(sig.entryLow)} – ${formatSmartPrice(sig.entryHigh)}</span>
                         </div>
-                        <div className="text-slate-500 dark:text-slate-400 mt-0.5">
-                          {sig.entryLowIrt.toLocaleString('fa-IR')} – {sig.entryHighIrt.toLocaleString('fa-IR')} ت
+                        <div className="text-slate-500 dark:text-slate-400 mt-0.5 text-[11px]">
+                          میانگین: <span className="ltr-num">${formatSmartPrice(sig.entryMid)}</span>
                         </div>
                       </td>
 
@@ -598,8 +626,8 @@ export const SignalsWorkspace: React.FC<SignalsWorkspaceProps> = ({
                         <div className="text-rose-600 dark:text-rose-400 font-medium">
                           <span className="ltr-num">${formatSmartPrice(sig.stop)} (−{sig.stopDistancePct}%)</span>
                         </div>
-                        <div className="text-slate-500 dark:text-slate-400 mt-0.5">
-                          {sig.stopIrt.toLocaleString('fa-IR')} تومان
+                        <div className="text-slate-500 dark:text-slate-400 mt-0.5 text-[11px] font-sans">
+                          تایم‌فریم {sig.timeframe.toUpperCase()} · ریسک 1R
                         </div>
                       </td>
 
@@ -696,7 +724,7 @@ export const SignalsWorkspace: React.FC<SignalsWorkspaceProps> = ({
                     <span>ماشین‌حساب دقیق حجم پوزیشن، قفل پایش و ثبت ورود ({selectedSignal.symbol})</span>
                   </h3>
                   <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-                    قیمت لحظه‌ای: <strong className="font-mono text-slate-900 dark:text-slate-100">${formatSmartPrice(selectedSignal.currentPrice)}</strong> · افق زمانی: <strong className="text-slate-800 dark:text-slate-200">{selectedSignal.timeHorizonFa}</strong>
+                    قیمت لحظه‌ای: <strong className="font-mono text-slate-900 dark:text-slate-100">${formatSmartPrice(selectedSignal.currentPrice)} USDT</strong> · افق زمانی: <strong className="text-slate-800 dark:text-slate-200">{selectedSignal.timeHorizonFa}</strong>
                   </p>
                 </div>
 
@@ -740,8 +768,8 @@ export const SignalsWorkspace: React.FC<SignalsWorkspaceProps> = ({
                     onChange={(e) => setCalcEquityUsdt(Number(e.target.value))}
                     className="mt-1 w-full px-3 py-2 text-xs font-mono tabular-nums bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-lg text-slate-900 dark:text-slate-100"
                   />
-                  <span className="block mt-1 text-xs text-slate-500 font-mono tabular-nums">
-                    معادل: {positionSizing.equityIrt.toLocaleString('fa-IR')} تومان
+                  <span className="block mt-1 text-xs text-slate-500">
+                    مبنای محاسبه: مدیریت ریسک دلاری (USDT)
                   </span>
                 </div>
 
@@ -760,7 +788,7 @@ export const SignalsWorkspace: React.FC<SignalsWorkspaceProps> = ({
                     className="mt-1 w-full px-3 py-2 text-xs font-mono tabular-nums bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-lg text-slate-900 dark:text-slate-100"
                   />
                   <span className="block mt-1 text-xs text-slate-500 font-mono tabular-nums">
-                    ریسک مجاز: {positionSizing.riskAmountUsdt} $ ({positionSizing.riskAmountIrt.toLocaleString('fa-IR')} ت)
+                    ریسک مجاز (1R): {positionSizing.riskAmountUsdt} USDT
                   </span>
                 </div>
 
@@ -772,7 +800,7 @@ export const SignalsWorkspace: React.FC<SignalsWorkspaceProps> = ({
                     {formatSmartPrice(positionSizing.effectiveEntryUsdt)} USDT
                   </div>
                   <span className="block mt-1 text-xs text-slate-500 font-mono tabular-nums">
-                    معادل: {positionSizing.effectiveEntryIrt.toLocaleString('fa-IR')} تومان
+                    فاصله تا استاپ: −{selectedSignal.stopDistancePct}%
                   </span>
                 </div>
               </div>
@@ -795,7 +823,7 @@ export const SignalsWorkspace: React.FC<SignalsWorkspaceProps> = ({
                     {positionSizing.positionNotionalUsdt.toLocaleString('en-US')} USDT
                   </p>
                   <span className="text-xs text-slate-500 font-mono tabular-nums">
-                    {positionSizing.positionNotionalIrt.toLocaleString('fa-IR')} تومان
+                    کارمزد رفت و برگشت: {selectedSignal.roundTripCostPct}%
                   </span>
                 </div>
 
@@ -805,7 +833,7 @@ export const SignalsWorkspace: React.FC<SignalsWorkspaceProps> = ({
                     −{positionSizing.netLossAtSlUsdt} USDT
                   </p>
                   <span className="text-xs text-slate-500 font-mono tabular-nums">
-                    −{positionSizing.netLossAtSlIrt.toLocaleString('fa-IR')} تومان
+                    ریسک استاندارد: −1.00R
                   </span>
                 </div>
 
@@ -815,7 +843,7 @@ export const SignalsWorkspace: React.FC<SignalsWorkspaceProps> = ({
                     +{positionSizing.netProfitAtTp1Usdt} $ / +{positionSizing.netProfitAtTp2Usdt} $
                   </p>
                   <span className="text-xs text-slate-500 font-mono tabular-nums">
-                    TP1: +{positionSizing.netProfitAtTp1Irt.toLocaleString('fa-IR')} ت
+                    بازده خالص: +{selectedSignal.netRrTp1}R / +{selectedSignal.netRrTp2}R
                   </span>
                 </div>
               </div>
@@ -918,10 +946,10 @@ export const SignalsWorkspace: React.FC<SignalsWorkspaceProps> = ({
               <div className="flex items-center justify-between pb-3 border-b border-slate-200 dark:border-slate-800">
                 <div>
                   <h3 className="text-base font-semibold text-slate-900 dark:text-slate-100">
-                    پیش‌نمایش پیام مختصر تلگرام (با قیمت واقعی روز و لینک فعال)
+                    پیش‌نمایش بولتن رسمی سیگنال تلگرام (ساختار کوانت بدون معادل تومانی)
                   </h3>
                   <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-                    شامل قیمت لحظه‌ای بازار، ورود، حد ضرر، اهداف سود، افق زمانی، R:R خالص و لینک فعال داشبورد
+                    شامل شناسنامه کوانت، سطوح دقیق ورود/استاپ/اهداف (USDT)، ماتریس ۴ ستونه، پروتکل ریسک‌فری و لینک زنده کنسول
                   </p>
                 </div>
               </div>

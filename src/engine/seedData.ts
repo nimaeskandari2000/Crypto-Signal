@@ -384,7 +384,7 @@ export function buildInitialSignals(usdtIrt = 265000): Signal[] {
       volumeConfirmation0to1: 0.91,
       orderbookDepthRatio0to1: 0.95,
       rationale:
-        'جمع‌آوری نقدینگی زیر کف ۴ ساعته انس جهانی (۴,۰۵۰ دلار) همزمان با تثبیت تتر در ۲۶۵,۰۰۰ تومان؛ قیمت لحظه‌ای مستقیم از والکس و کراکن.',
+        'جمع‌آوری نقدینگی زیر کف ۴ ساعته انس جهانی (۴,۰۵۰ دلار) و بازگشت پرقدرت بالای گره تقاضای بنیادی؛ قیمت لحظه‌ای مستقیم از والکس و کراکن.',
       htfTrend: 'صعودی',
       regime: 'bull_low_vol',
       mode: 'live',
@@ -682,7 +682,7 @@ export function buildInitialSignals(usdtIrt = 265000): Signal[] {
       orderbookDepthRatio0to1: 0.92,
       volumeSurgeMultiplier: 2.9,
       pumpPotentialScore: 89,
-      pumpCatalystFa: 'زیرساخت اصلی سهام و کامودیتی‌های توکنیزه‌شده؛ رشد +۴.۵۳٪ با حجم بالای ۳.۱ میلیارد تومان در والکس',
+      pumpCatalystFa: 'زیرساخت اصلی سهام و کامودیتی‌های توکنیزه‌شده؛ رشد +۴.۵۳٪ با جهش حجم معاملات اسپات (USDT)',
       maxAllocationPct: 4.0,
       rationale:
         'انباشت سنگین نهنگ‌ها روی کف ۰.۳۶۵ دلار و شکست ساختار ۴ ساعته؛ هدف پامپ ۰.۵۳۲ دلار (+۴۲.۱٪ سود خالص).',
@@ -772,7 +772,7 @@ export function buildInitialSignals(usdtIrt = 265000): Signal[] {
       orderbookDepthRatio0to1: 0.91,
       volumeSurgeMultiplier: 2.7,
       pumpPotentialScore: 87,
-      pumpCatalystFa: 'رشد +۶.۰۱٪ با حجم ۴.۵ میلیارد تومان در والکس و واگرایی صعودی در تایم‌فریم روزانه',
+      pumpCatalystFa: 'رشد +۶.۰۱٪ با جهش ۲.۷ برابری حجم معاملات اسپات و واگرایی صعودی در تایم‌فریم روزانه',
       maxAllocationPct: 3.5,
       rationale:
         'شکست خط روند نزولی ۴ ساعته با حجم بالا در والکس؛ ریسک به ریوارد خالص ۲.۱۲R در هدف اول و +۴۳.۶٪ در تارگت پامپ.',
@@ -819,7 +819,7 @@ export function buildInitialSignals(usdtIrt = 265000): Signal[] {
       underlyingMarketFa: 'صندوق نقره iShares Silver Trust (بازار کامودیتی نیویورک + والکس)',
       liveSourceLabel: 'والکس (SLVONUSDT زنده)',
       rationale:
-        'قابل معامله مستقیم در والکس به تتر و تومان (۱۲.۷ میلیون تومان)؛ شکست مقاومت ۴۸ دلار نقره جهانی با نسبت طلا به نقره (Gold/Silver Ratio) بسیار ارزنده.',
+        'قابل معامله مستقیم در اسپات تتر (SLVON/USDT)؛ شکست مقاومت ۴۸ دلار نقره جهانی با نسبت طلا به نقره (Gold/Silver Ratio) بسیار ارزنده.',
       htfTrend: 'صعودی',
       regime: 'bull_low_vol',
       mode: 'live',
@@ -860,7 +860,7 @@ export function buildInitialSignals(usdtIrt = 265000): Signal[] {
       underlyingMarketFa: 'صندوق جهانی معادن مس (Global X Copper ETF — قابل خرید در والکس)',
       liveSourceLabel: 'والکس (COPXONUSDT زنده)',
       rationale:
-        'رشد +۲.۵۳٪ در ۲۴ ساعت اخیر به دلیل تقاضای دیتاسنترهای هوش مصنوعی و شبکه برق برای مس؛ قابل خرید مستقیم در اسپات والکس (۲۰.۵ میلیون تومان).',
+        'رشد +۲.۵۳٪ در ۲۴ ساعت اخیر به دلیل تقاضای دیتاسنترهای هوش مصنوعی و شبکه برق برای مس؛ قابل خرید مستقیم در اسپات تتر والکس (COPXON/USDT).',
       htfTrend: 'صعودی',
       regime: 'bull_low_vol',
       mode: 'live',
@@ -898,10 +898,10 @@ export function buildInitialSignals(usdtIrt = 265000): Signal[] {
       regimeCompatible: true,
       volumeConfirmation0to1: 0.91,
       orderbookDepthRatio0to1: 0.89,
-      underlyingMarketFa: 'صندوق نفت ایالات متحده (United States Oil Fund — با حجم ۲۹ میلیارد تومان در والکس)',
+      underlyingMarketFa: 'صندوق نفت ایالات متحده (United States Oil Fund — با نقدینگی عمیق اسپات تتر در والکس)',
       liveSourceLabel: 'والکس (USOONUSDT زنده)',
       rationale:
-        'اصلاح ۵.۸٪ به ناحیه تقاضای کلیدی ۱۴۷ دلار و جمع‌آوری نقدینگی سنگین (۲۹ میلیارد تومان حجم ۲۴ ساعته در والکس)؛ آماده بازگشت به هدف ۱۵۶.۹ دلار.',
+        'اصلاح ۵.۸٪ به ناحیه تقاضای کلیدی ۱۴۷ دلار و جمع‌آوری نقدینگی سنگین در سفارش‌دفتر اسپات؛ آماده بازگشت به هدف ۱۵۶.۹ دلار.',
       htfTrend: 'صعودی',
       regime: 'bull_high_vol',
       mode: 'live',

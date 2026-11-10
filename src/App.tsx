@@ -68,6 +68,10 @@ const LOCAL_STORAGE_REPORTS_KEY = 'quantpulse_daily_reports_v4';
 
 export default function App() {
   const [activeTab, setActiveTab] = useState<ActiveTab>('signals');
+  const [deepLinkSignalId, setDeepLinkSignalId] = useState<string | undefined>(undefined);
+  const [deepLinkFilter, setDeepLinkFilter] = useState<'all' | 'active' | 'locked' | 'closed' | undefined>(
+    undefined
+  );
   const [isDark, setIsDark] = useState<boolean>(true);
   const [isScanning, setIsScanning] = useState<boolean>(false);
   const [statusBanner, setStatusBanner] = useState<string | null>(null);
@@ -132,6 +136,36 @@ export default function App() {
       root.classList.remove('dark');
     }
   }, [isDark]);
+
+  // Parse unique Telegram deep-link parameters (?report=...&tab=...&signal=...&filter=...&msg=...)
+  useEffect(() => {
+    try {
+      const params = new URLSearchParams(window.location.search);
+      const tabParam = params.get('tab') as ActiveTab | null;
+      const sigParam = params.get('signal');
+      const filterParam = params.get('filter') as 'all' | 'active' | 'locked' | 'closed' | null;
+      const msgParam = params.get('msg');
+
+      if (
+        tabParam &&
+        ['signals', 'pump_forex', 'dollar_gold', 'performance', 'settings'].includes(tabParam)
+      ) {
+        setActiveTab(tabParam);
+      }
+      if (sigParam) {
+        setDeepLinkSignalId(sigParam);
+      }
+      if (filterParam && ['all', 'active', 'locked', 'closed'].includes(filterParam)) {
+        setDeepLinkFilter(filterParam);
+      }
+      if (msgParam) {
+        setStatusBanner(`🔗 بازشده از طریق لینک یکتای پیام تلگرام (#${msgParam})`);
+        setTimeout(() => setStatusBanner(null), 6500);
+      }
+    } catch {
+      // ignore
+    }
+  }, []);
 
   // Dual-mode state loader: tries live API first, falls back to static /data/bot_state.json for GitHub Pages
   useEffect(() => {
@@ -1307,6 +1341,8 @@ export default function App() {
               }
             }}
             telegramFeedback={telegramFeedback}
+            initialSelectedSignalId={deepLinkSignalId}
+            initialStatusFilter={deepLinkFilter}
           />
         )}
 

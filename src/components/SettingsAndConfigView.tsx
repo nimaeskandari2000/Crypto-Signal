@@ -700,7 +700,10 @@ iran:
                   telegramChatId: sanitizeTelegramChatId(formState.telegramChatId),
                 });
                 const todayFa = getPersianDateLabel();
-                const dailyLink = resolveDailyDashboardLink(formState.dashboardUrl);
+                const dailyLink = resolveDailyDashboardLink(formState.dashboardUrl, {
+                  type: 'test',
+                  tab: 'settings',
+                });
                 const testMsg = [
                   '\u200F✅ تست اتصال سیستماتیک ربات سیگنال‌دهی QuantPulse',
                   `\u200F📅 تاریخ: ${todayFa}`,
@@ -711,7 +714,7 @@ iran:
                   `\u200F   ├─ ⏱ سیکل اسکن جامع بازار و شکارچی پامپ: هر ${formState.scanIntervalMinutes} دقیقه`,
                   `\u200F   ╰─ 🔐 سیکل پایش سیگنال‌های قفل‌شده: هر ${formState.lockedMonitorIntervalMinutes} دقیقه`,
                   '\u200F━━━━━━━━━━━━━━━━━━━━━━━━',
-                  `\u200F🔗 لینک داشبورد روز: ${dailyLink}`,
+                  `\u200F🔗 لینک یکتای این پیام: ${dailyLink}`,
                 ].join('\n');
                 await onSendTelegram(testMsg, 'تست اتصال و لینک زنده داشبورد');
               }}
