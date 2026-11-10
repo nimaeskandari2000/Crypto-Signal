@@ -25,10 +25,13 @@ import {
   formatExecutedTradeTelegramMessage,
   formatForTelegramApiHtml,
   formatLockedSignalsTelegramReport,
+  formatScanRadarTelegramSummary,
   formatTelegramSignalMessage,
   getPersianDateLabel,
   recalibrateSignalWithLiveMarket,
   resolveDailyDashboardLink,
+  sanitizeTelegramChatId,
+  sanitizeTelegramToken,
 } from './src/engine/quantEngine';
 import {
   BotSettings,
@@ -130,21 +133,20 @@ function loadPersistedState() {
   }
 }
 
+const PUBLIC_STATE_FILE_PATH = path.join(__dirname, 'public', 'data', 'bot_state.json');
+
 function savePersistedState() {
   try {
     const dir = path.dirname(STATE_FILE_PATH);
     if (!fs.existsSync(dir)) {
       fs.mkdirSync(dir, { recursive: true });
     }
-    const sanitizedSettings = {
-      ...botSettings,
-      telegramBotToken: '',
-    };
+    // Keep full botSettings in private local state file (excluded from git and zip)
     fs.writeFileSync(
       STATE_FILE_PATH,
       JSON.stringify(
         {
-          botSettings: sanitizedSettings,
+          botSettings,
           dollarGoldSnapshot,
           signalsList,
           executedTradesList,
@@ -158,6 +160,33 @@ function savePersistedState() {
       ),
       'utf-8'
     );
+
+    // Also keep public/data/bot_state.json synchronized (with token stripped for security)
+    const pubDir = path.dirname(PUBLIC_STATE_FILE_PATH);
+    if (!fs.existsSync(pubDir)) {
+      fs.mkdirSync(pubDir, { recursive: true });
+    }
+    fs.writeFileSync(
+      PUBLIC_STATE_FILE_PATH,
+      JSON.stringify(
+        {
+          settings: { ...botSettings, telegramBotToken: '' },
+          dollarGold: dollarGoldSnapshot,
+          signals: signalsList,
+          executedTrades: executedTradesList,
+          dailyReports: dailyReportsList,
+          strategies: strategiesList,
+          postmortem: INITIAL_POSTMORTEM_TAGS,
+          challenger: challengerState,
+          sourceHealth: sourceHealthList,
+          sentSignalIds: [],
+          macro: macroSummary,
+        },
+        null,
+        2
+      ),
+      'utf-8'
+    );
   } catch {
     // non-fatal if read-only container fs
   }
@@ -165,13 +194,13 @@ function savePersistedState() {
 
 loadPersistedState();
 
-async function fetchWithTimeout(url: string, timeoutMs = 4000): Promise<Response> {
+async function fetchWithTimeout(url: string, timeoutMs = 4500): Promise<Response> {
   const controller = new AbortController();
   const id = setTimeout(() => controller.abort(), timeoutMs);
   try {
     const res = await fetch(url, {
       signal: controller.signal,
-      headers: { Accept: 'application/json', 'User-Agent': 'Mozilla/5.0 QuantPulseBot/4.0' },
+      headers: { Accept: 'application/json', 'User-Agent': 'Mozilla/5.0 QuantPulseBot/4.1' },
     });
     return res;
   } finally {
@@ -179,25 +208,147 @@ async function fetchWithTimeout(url: string, timeoutMs = 4000): Promise<Response
   }
 }
 
-async function dispatchTelegramMessage(text: string): Promise<boolean> {
-  const token = botSettings.telegramBotToken?.trim();
-  const chatId = botSettings.telegramChatId?.trim();
-  if (!token || !chatId) return false;
+async function resolveTelegramChatIdFromUpdates(token: string): Promise<{
+  chatId: string;
+  chatTitle?: string;
+}> {
+  const cleanToken = sanitizeTelegramToken(token);
+  if (!cleanToken) return { chatId: '' };
   try {
-    const htmlFormatted = formatForTelegramApiHtml(text);
+    const res = await fetchWithTimeout(
+      `https://api.telegram.org/bot${cleanToken}/getUpdates?limit=15`,
+      4000
+    );
+    if (!res.ok) return { chatId: '' };
+    const data = (await res.json()) as any;
+    const updates = Array.isArray(data?.result) ? data.result : [];
+    for (let i = updates.length - 1; i >= 0; i--) {
+      const u = updates[i];
+      const chatObj =
+        u?.message?.chat ||
+        u?.channel_post?.chat ||
+        u?.my_chat_member?.chat ||
+        u?.edited_message?.chat;
+      if (chatObj?.id) {
+        const cid = String(chatObj.id);
+        const title =
+          chatObj.title ||
+          [chatObj.first_name, chatObj.last_name].filter(Boolean).join(' ') ||
+          chatObj.username ||
+          cid;
+        return { chatId: cid, chatTitle: title };
+      }
+    }
+  } catch {
+    // ignore
+  }
+  return { chatId: '' };
+}
+
+function syncIncomingTelegramCredentials(body?: any) {
+  if (!body || typeof body !== 'object') return;
+  const incomingToken = sanitizeTelegramToken(body.telegramBotToken);
+  const incomingChatId = sanitizeTelegramChatId(body.telegramChatId);
+  let changed = false;
+  if (incomingToken && incomingToken !== botSettings.telegramBotToken) {
+    botSettings.telegramBotToken = incomingToken;
+    changed = true;
+  }
+  if (incomingChatId && incomingChatId !== botSettings.telegramChatId) {
+    botSettings.telegramChatId = incomingChatId;
+    changed = true;
+  }
+  if (changed) {
+    savePersistedState();
+  }
+}
+
+async function dispatchTelegramMessage(
+  text: string,
+  overrideToken?: string,
+  overrideChatId?: string
+): Promise<{ ok: boolean; chatIdUsed: string; error?: string }> {
+  const token = sanitizeTelegramToken(
+    overrideToken || botSettings.telegramBotToken || process.env.TELEGRAM_BOT_TOKEN
+  );
+  let chatId = sanitizeTelegramChatId(
+    overrideChatId || botSettings.telegramChatId || process.env.TELEGRAM_CHAT_ID
+  );
+
+  if (!token) {
+    return {
+      ok: false,
+      chatIdUsed: '',
+      error: 'توکن ربات تلگرام (TELEGRAM_BOT_TOKEN) تنظیم نشده است.',
+    };
+  }
+
+  if (!chatId) {
+    const resolved = await resolveTelegramChatIdFromUpdates(token);
+    if (resolved.chatId) {
+      chatId = resolved.chatId;
+      botSettings.telegramChatId = chatId;
+      savePersistedState();
+    }
+  }
+
+  if (!chatId) {
+    return {
+      ok: false,
+      chatIdUsed: '',
+      error:
+        'شناسه چت (TELEGRAM_CHAT_ID) یافت نشد. ابتدا در تلگرام دکمه Start را در ربات خود بزنید یا Chat ID را وارد کنید.',
+    };
+  }
+
+  const sendAttempt = async (
+    targetChatId: string,
+    useHtml: boolean
+  ): Promise<{ ok: boolean; status: number; bodyText: string }> => {
+    const payload: Record<string, any> = {
+      chat_id: targetChatId,
+      text: useHtml ? formatForTelegramApiHtml(text) : text,
+      disable_web_page_preview: true,
+    };
+    if (useHtml) payload.parse_mode = 'HTML';
+
     const postRes = await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        chat_id: chatId,
-        text: htmlFormatted,
-        parse_mode: 'HTML',
-        disable_web_page_preview: true,
-      }),
+      body: JSON.stringify(payload),
     });
-    return postRes.ok;
-  } catch {
-    return false;
+    const bodyText = await postRes.text();
+    return { ok: postRes.ok, status: postRes.status, bodyText };
+  };
+
+  try {
+    let attempt = await sendAttempt(chatId, true);
+    if (!attempt.ok) {
+      // Fallback: retry as plain text without HTML parse_mode
+      attempt = await sendAttempt(chatId, false);
+    }
+    if (!attempt.ok && attempt.bodyText.includes('chat not found')) {
+      const resolved = await resolveTelegramChatIdFromUpdates(token);
+      if (resolved.chatId && resolved.chatId !== chatId) {
+        chatId = resolved.chatId;
+        botSettings.telegramChatId = chatId;
+        savePersistedState();
+        attempt = await sendAttempt(chatId, true);
+      }
+    }
+    if (attempt.ok) {
+      return { ok: true, chatIdUsed: chatId };
+    }
+    let cleanError = attempt.bodyText;
+    try {
+      const parsedErr = JSON.parse(attempt.bodyText);
+      if (parsedErr?.description) cleanError = parsedErr.description;
+    } catch {
+      // keep raw
+    }
+    return { ok: false, chatIdUsed: chatId, error: cleanError };
+  } catch (err) {
+    return { ok: false, chatIdUsed: chatId, error: String(err) };
   }
 }
 
@@ -272,47 +423,95 @@ async function refreshLiveMarketFeeds(sendTelegramOnUpdate = false): Promise<voi
     updateSourceStatus('wallex_api', 'fallback', Date.now() - t0Wallex, 'استفاده از آخرین اسنپ‌شات کش‌شده');
   }
 
-  // 2. Fetch Live Global Prices from Kraken Public API (BTC, ETH, PAXG, SOL, AVAX, EURUSD)
+  // 1B. Backup USDT/IRT feed from Nobitex in case Wallex is rate-limited
+  if (!liveAssetPricesUsdt.BTC) {
+    try {
+      const nbRes = await fetchWithTimeout(
+        'https://api.nobitex.ir/market/stats?srcCurrency=usdt&dstCurrency=rls',
+        3000
+      );
+      if (nbRes.ok) {
+        const nbData = (await nbRes.json()) as any;
+        const latestRls = Number(nbData?.stats?.['usdt-rls']?.latest);
+        if (latestRls >= 500000 && latestRls <= 10000000) {
+          usdtIrtWallex = Math.round(latestRls / 10);
+        }
+      }
+    } catch {
+      // ignore
+    }
+  }
+
+  // 2. Fetch Live Global Prices from Kraken Public API (BTC, ETH, PAXG, SOL, AVAX, LINK, SUI, PEPE, ARB, RENDER, ONDO, ETHFI, EURUSD)
   const t0Global = Date.now();
   try {
     const res = await fetchWithTimeout(
-      'https://api.kraken.com/0/public/Ticker?pair=XBTUSD,ETHUSD,PAXGUSD,SOLUSD,AVAXUSD,EURUSD',
-      4000
+      'https://api.kraken.com/0/public/Ticker?pair=XBTUSD,ETHUSD,PAXGUSD,SOLUSD,AVAXUSD,LINKUSD,SUIUSD,PEPEUSD,ARBUSD,RENDERUSD,ONDOUSD,ETHFIUSD,EURUSD',
+      4500
     );
     if (res.ok) {
       const json = (await res.json()) as any;
       const result = json?.result || {};
-      const btcObj = result.XXBTZUSD || result.XBTUSD;
-      const ethObj = result.XETHZUSD || result.ETHUSD;
-      const paxgObj = result.PAXGUSD;
-      const solObj = result.SOLUSD;
-      const avaxObj = result.AVAXUSD;
-      const eurObj = result.ZEURZUSD || result.EURUSD;
+      const pickKrakenPrice = (keys: string[]) => {
+        for (const k of keys) {
+          const val = Number(result[k]?.c?.[0]);
+          if (val > 0) return val;
+        }
+        return 0;
+      };
 
-      const liveBtc = Number(btcObj?.c?.[0]);
+      const liveBtc = pickKrakenPrice(['XXBTZUSD', 'XBTUSD']);
       if (liveBtc > 10000) {
         macroSummary.btcPrice = Number(liveBtc.toFixed(2));
         liveAssetPricesUsdt.BTC = macroSummary.btcPrice;
       }
-      const liveEth = Number(ethObj?.c?.[0]);
+      const liveEth = pickKrakenPrice(['XETHZUSD', 'ETHUSD']);
       if (liveEth > 500) {
         macroSummary.ethPrice = Number(liveEth.toFixed(2));
         liveAssetPricesUsdt.ETH = macroSummary.ethPrice;
       }
-      const livePaxg = Number(paxgObj?.c?.[0]);
+      const livePaxg = pickKrakenPrice(['PAXGUSD']);
       if (livePaxg > 1800) {
         xauUsdOunce = Number(livePaxg.toFixed(2));
         liveAssetPricesUsdt.PAXG = xauUsdOunce;
       }
-      const liveSol = Number(solObj?.c?.[0]);
+      const liveSol = pickKrakenPrice(['SOLUSD']);
       if (liveSol > 5 && !liveAssetPricesUsdt.SOL) {
         liveAssetPricesUsdt.SOL = Number(liveSol.toFixed(2));
       }
-      const liveAvax = Number(avaxObj?.c?.[0]);
+      const liveAvax = pickKrakenPrice(['AVAXUSD']);
       if (liveAvax > 1 && !liveAssetPricesUsdt.AVAX) {
         liveAssetPricesUsdt.AVAX = Number(liveAvax.toFixed(2));
       }
-      const liveEur = Number(eurObj?.c?.[0]);
+      const liveLink = pickKrakenPrice(['LINKUSD']);
+      if (liveLink > 1 && !liveAssetPricesUsdt.LINK) {
+        liveAssetPricesUsdt.LINK = Number(liveLink.toFixed(2));
+      }
+      const liveSui = pickKrakenPrice(['SUIUSD']);
+      if (liveSui > 0.1 && !liveAssetPricesUsdt.SUI) {
+        liveAssetPricesUsdt.SUI = Number(liveSui.toFixed(4));
+      }
+      const livePepe = pickKrakenPrice(['PEPEUSD']);
+      if (livePepe > 0 && !liveAssetPricesUsdt.PEPE) {
+        liveAssetPricesUsdt.PEPE = Number(livePepe.toFixed(8));
+      }
+      const liveArb = pickKrakenPrice(['ARBUSD']);
+      if (liveArb > 0.05 && !liveAssetPricesUsdt.ARB) {
+        liveAssetPricesUsdt.ARB = Number(liveArb.toFixed(4));
+      }
+      const liveRender = pickKrakenPrice(['RENDERUSD']);
+      if (liveRender > 0.2 && !liveAssetPricesUsdt.RENDER) {
+        liveAssetPricesUsdt.RENDER = Number(liveRender.toFixed(3));
+      }
+      const liveOndo = pickKrakenPrice(['ONDOUSD']);
+      if (liveOndo > 0.05 && !liveAssetPricesUsdt.ONDO) {
+        liveAssetPricesUsdt.ONDO = Number(liveOndo.toFixed(4));
+      }
+      const liveEthfi = pickKrakenPrice(['ETHFIUSD']);
+      if (liveEthfi > 0.05 && !liveAssetPricesUsdt.ETHFI) {
+        liveAssetPricesUsdt.ETHFI = Number(liveEthfi.toFixed(4));
+      }
+      const liveEur = pickKrakenPrice(['ZEURZUSD', 'EURUSD']);
       if (liveEur > 0.8 && liveEur < 1.5) {
         liveAssetPricesUsdt.EUR = Number(liveEur.toFixed(4));
       }
@@ -471,9 +670,17 @@ async function refreshLiveMarketFeeds(sendTelegramOnUpdate = false): Promise<voi
   if (
     sendTelegramOnUpdate &&
     botSettings.autoSendTelegramOnScan &&
-    botSettings.telegramBotToken &&
-    botSettings.telegramChatId
+    (botSettings.telegramBotToken || process.env.TELEGRAM_BOT_TOKEN)
   ) {
+    await dispatchTelegramMessage(
+      formatScanRadarTelegramSummary({
+        dollarGold: dollarGoldSnapshot,
+        btcPrice: macroSummary.btcPrice,
+        ethPrice: macroSummary.ethPrice,
+        signals: signalsList,
+        dashboardUrl: botSettings.dashboardUrl,
+      })
+    );
     const lockedSignals = signalsList.filter((s) => s.isLocked);
     if (lockedSignals.length > 0) {
       await dispatchTelegramMessage(
@@ -589,6 +796,7 @@ async function startServer() {
 
   // API: Toggle Lock/Unlock on a signal (قفل سیگنال و پایش ۵ دقیقه‌ای)
   app.post('/api/signals/toggle-lock', async (req, res) => {
+    syncIncomingTelegramCredentials(req.body);
     const { signalId } = req.body as { signalId: string };
     const target = signalsList.find((s) => s.id === signalId);
     if (!target) {
@@ -629,32 +837,39 @@ async function startServer() {
     savePersistedState();
 
     const updatedSig = signalsList.find((s) => s.id === signalId)!;
+    let tgRes = { ok: false, chatIdUsed: '' };
     if (nextLocked) {
-      await dispatchTelegramMessage(formatTelegramSignalMessage(updatedSig, botSettings));
+      tgRes = await dispatchTelegramMessage(formatTelegramSignalMessage(updatedSig, botSettings));
     }
 
     res.json({
       ok: true,
       signals: signalsList,
+      telegramSent: tgRes.ok,
       message: nextLocked
-        ? `سیگنال «${updatedSig.persianName} (${updatedSig.symbol})» قفل شد (🔒)؛ پایش ۵ دقیقه‌ای فعال گردید و به تلگرام ارسال شد.`
+        ? tgRes.ok
+          ? `سیگنال «${updatedSig.persianName} (${updatedSig.symbol})» قفل شد (🔒)؛ پایش ۵ دقیقه‌ای فعال گردید و به تلگرام (${tgRes.chatIdUsed}) ارسال شد.`
+          : `سیگنال «${updatedSig.persianName} (${updatedSig.symbol})» قفل شد (🔒)؛ پایش ۵ دقیقه‌ای فعال گردید.`
         : `قفل سیگنال «${updatedSig.persianName} (${updatedSig.symbol})» باز شد.`,
     });
   });
 
   // API: Send Locked Signals Live Monitoring Report to Telegram
-  app.post('/api/telegram/send-locked-status', async (_req, res) => {
+  app.post('/api/telegram/send-locked-status', async (req, res) => {
+    syncIncomingTelegramCredentials(req.body);
     await refreshLiveMarketFeeds(false);
     const locked = signalsList.filter((s) => s.isLocked);
     const text = formatLockedSignalsTelegramReport(locked, botSettings.dashboardUrl);
-    const ok = await dispatchTelegramMessage(text);
+    const tgRes = await dispatchTelegramMessage(text);
     res.json({
       ok: true,
-      sent: ok,
+      sent: tgRes.ok,
+      chatIdUsed: tgRes.chatIdUsed,
+      error: tgRes.error,
       lockedCount: locked.length,
-      message: ok
-        ? `گزارش پایش لحظه‌ای ${locked.length} سیگنال قفل‌شده با قیمت زنده به تلگرام ارسال شد.`
-        : `گزارش ${locked.length} سیگنال قفل‌شده آماده شد.`,
+      message: tgRes.ok
+        ? `گزارش پایش لحظه‌ای ${locked.length} سیگنال قفل‌شده با قیمت زنده به تلگرام (${tgRes.chatIdUsed}) ارسال شد.`
+        : `گزارش ${locked.length} سیگنال قفل‌شده آماده شد (${tgRes.error || 'برای ارسال مستقیم، توکن و Chat ID تلگرام را در تب تنظیمات وارد کنید'}).`,
     });
   });
 
@@ -716,8 +931,9 @@ async function startServer() {
     });
   });
 
-  // API: Trigger immediate market & Dollar/Gold scan
+  // API: Trigger immediate market & Dollar/Gold scan (and dispatch Telegram radar if configured)
   app.post('/api/scan', async (req, res) => {
+    syncIncomingTelegramCredentials(req.body);
     const customUsdtIrt = Number(req.body?.usdtIrtWallex);
     const customXauUsd = Number(req.body?.xauUsdOunce);
 
@@ -744,11 +960,33 @@ async function startServer() {
       );
     }
 
+    let telegramSent = false;
+    let telegramNote = '';
+    const hasToken = Boolean(
+      sanitizeTelegramToken(botSettings.telegramBotToken || process.env.TELEGRAM_BOT_TOKEN)
+    );
+    if (botSettings.autoSendTelegramOnScan && hasToken) {
+      const radarText = formatScanRadarTelegramSummary({
+        dollarGold: dollarGoldSnapshot,
+        btcPrice: macroSummary.btcPrice,
+        ethPrice: macroSummary.ethPrice,
+        signals: signalsList,
+        dashboardUrl: botSettings.dashboardUrl,
+      });
+      const tgResult = await dispatchTelegramMessage(radarText);
+      telegramSent = tgResult.ok;
+      telegramNote = tgResult.ok
+        ? ` | به تلگرام (${tgResult.chatIdUsed}) ارسال شد ✅`
+        : ` | خطای تلگرام: ${tgResult.error || 'Chat ID نامعتبر'}`;
+    }
+
     savePersistedState();
 
     res.json({
       ok: true,
-      message: `اسکن زنده انجام شد — تتر والکس: ${dollarGoldSnapshot.usdtIrtWallex.toLocaleString('fa-IR')} تومان | انس طلا: $${dollarGoldSnapshot.xauUsdOunce} | BTC: $${macroSummary.btcPrice}`,
+      telegramSent,
+      settings: botSettings,
+      message: `اسکن زنده انجام شد — تتر والکس: ${dollarGoldSnapshot.usdtIrtWallex.toLocaleString('fa-IR')} تومان | انس طلا: $${dollarGoldSnapshot.xauUsdOunce} | BTC: $${macroSummary.btcPrice}${telegramNote}`,
       dollarGold: dollarGoldSnapshot,
       signals: signalsList,
       executedTrades: executedTradesList,
@@ -772,6 +1010,14 @@ async function startServer() {
     botSettings = {
       ...botSettings,
       ...incoming,
+      telegramBotToken:
+        incoming.telegramBotToken !== undefined
+          ? sanitizeTelegramToken(incoming.telegramBotToken)
+          : botSettings.telegramBotToken,
+      telegramChatId:
+        incoming.telegramChatId !== undefined
+          ? sanitizeTelegramChatId(incoming.telegramChatId)
+          : botSettings.telegramChatId,
       referenceEquityIrt: Math.round(
         (incoming.referenceEquityUsdt ?? botSettings.referenceEquityUsdt) *
           dollarGoldSnapshot.usdtIrtAverage
@@ -785,6 +1031,59 @@ async function startServer() {
       settings: botSettings,
       signals: signalsList,
     });
+  });
+
+  // API: Auto-detect Telegram Chat ID from Bot Token using getUpdates
+  app.post('/api/telegram/detect-chat-id', async (req, res) => {
+    const token = sanitizeTelegramToken(
+      req.body?.telegramBotToken || botSettings.telegramBotToken || process.env.TELEGRAM_BOT_TOKEN
+    );
+    if (!token) {
+      res.status(400).json({
+        ok: false,
+        error: 'لطفاً ابتدا توکن ربات تلگرام (TELEGRAM_BOT_TOKEN) را وارد کنید.',
+      });
+      return;
+    }
+
+    try {
+      const meRes = await fetchWithTimeout(`https://api.telegram.org/bot${token}/getMe`, 4000);
+      if (!meRes.ok) {
+        res.status(400).json({
+          ok: false,
+          error: 'توکن ربات تلگرام معتبر نیست (Telegram getMe خطا برگرداند). توکن را از @BotFather بررسی کنید.',
+        });
+        return;
+      }
+      const meJson = (await meRes.json()) as any;
+      const botUsername = meJson?.result?.username ? `@${meJson.result.username}` : 'ربات شما';
+
+      const resolved = await resolveTelegramChatIdFromUpdates(token);
+      if (resolved.chatId) {
+        botSettings.telegramBotToken = token;
+        botSettings.telegramChatId = resolved.chatId;
+        savePersistedState();
+        res.json({
+          ok: true,
+          chatId: resolved.chatId,
+          chatTitle: resolved.chatTitle,
+          botUsername,
+          message: `شناسه چت (${resolved.chatId} - ${resolved.chatTitle}) از آخرین پیام ارسالی به ${botUsername} با موفقیت شناسایی و ذخیره شد!`,
+        });
+        return;
+      }
+
+      res.json({
+        ok: false,
+        botUsername,
+        error: `اتصال به ${botUsername} برقرار است، اما هنوز پیامی برای ربات ارسال نشده است. لطفاً در تلگرام وارد ${botUsername} شوید، دکمه Start یا یک پیام بفرستید و دوباره روی این دکمه بزنید.`,
+      });
+    } catch (err) {
+      res.status(500).json({
+        ok: false,
+        error: `عدم دسترسی به سرور تلگرام: ${String(err)}`,
+      });
+    }
   });
 
   // API: Toggle strategy live/shadow mode
@@ -903,62 +1202,42 @@ async function startServer() {
 
   // API: Send message to Telegram
   app.post('/api/telegram/send', async (req, res) => {
-    const { text, title } = req.body as { text: string; title?: string };
+    syncIncomingTelegramCredentials(req.body);
+    const { text, title, telegramBotToken, telegramChatId } = req.body as {
+      text: string;
+      title?: string;
+      telegramBotToken?: string;
+      telegramChatId?: string;
+    };
     if (!text || !text.trim()) {
       res.status(400).json({ ok: false, error: 'متن پیام تلگرام خالی است.' });
       return;
     }
 
-    const token = botSettings.telegramBotToken?.trim();
-    const chatId = botSettings.telegramChatId?.trim();
-
-    if (token && chatId) {
-      try {
-        const htmlFormatted = formatForTelegramApiHtml(text);
-        const postRes = await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            chat_id: chatId,
-            text: htmlFormatted,
-            parse_mode: 'HTML',
-            disable_web_page_preview: true,
-          }),
-        });
-        if (postRes.ok) {
-          res.json({
-            ok: true,
-            mode: 'live_telegram',
-            message: `پیام «${title || 'سیگنال'}» با موفقیت به تلگرام (${chatId}) ارسال شد.`,
-          });
-          return;
-        }
-        const errBody = await postRes.text();
-        res.json({
-          ok: true,
-          mode: 'simulated_fallback',
-          message: `توکن تلگرام پاسخ نداد (${errBody.slice(0, 60)})؛ پیام در صف ارسال ثبت شد.`,
-        });
-        return;
-      } catch {
-        res.json({
-          ok: true,
-          mode: 'simulated_fallback',
-          message: 'پیام در دفتر ثبت شد (عدم دسترسی مستقیم به سرور تلگرام).',
-        });
-        return;
-      }
+    const tgRes = await dispatchTelegramMessage(text, telegramBotToken, telegramChatId);
+    if (tgRes.ok) {
+      res.json({
+        ok: true,
+        sent: true,
+        chatIdUsed: tgRes.chatIdUsed,
+        mode: 'live_telegram',
+        message: `پیام «${title || 'سیگنال'}» با موفقیت به تلگرام (${tgRes.chatIdUsed}) ارسال شد ✅`,
+      });
+      return;
     }
 
     res.json({
       ok: true,
-      mode: 'preview_recorded',
-      message: `پیام «${title || 'گزارش ربات'}» آماده و در لاگ خروجی تلگرام ثبت شد (برای ارسال مستقیم، توکن و Chat ID را در تب تنظیمات وارد کنید).`,
+      sent: false,
+      error: tgRes.error,
+      mode: 'needs_credentials_or_fallback',
+      message: `ارسال مستقیم انجام نشد: ${tgRes.error || 'توکن و Chat ID را در تب تنظیمات بررسی کنید.'}`,
     });
   });
 
   // API: Send ALL eligible active signals to Telegram at once (after syncing live prices)
-  app.post('/api/telegram/send-all-signals', async (_req, res) => {
+  app.post('/api/telegram/send-all-signals', async (req, res) => {
+    syncIncomingTelegramCredentials(req.body);
     await refreshLiveMarketFeeds(false);
     const eligible = signalsList.filter(
       (s) =>
@@ -969,22 +1248,29 @@ async function startServer() {
     );
 
     let sentCount = 0;
+    let lastError = '';
     for (const sig of eligible) {
-      const ok = await dispatchTelegramMessage(
+      const tgRes = await dispatchTelegramMessage(
         formatTelegramSignalMessage(sig, botSettings)
       );
-      if (ok) sentCount++;
+      if (tgRes.ok) {
+        sentCount++;
+      } else if (tgRes.error) {
+        lastError = tgRes.error;
+      }
     }
 
     const symbolsList = eligible.map((s) => s.symbol).join('، ');
     res.json({
       ok: true,
+      sent: sentCount > 0,
       sentCount,
       totalEligible: eligible.length,
+      error: lastError,
       message:
         sentCount > 0
-          ? `تمامی ${sentCount} سیگنال فعال با قیمت‌های لحظه‌ای واقعی (${symbolsList}) به تلگرام شما ارسال شدند.`
-          : `${eligible.length} سیگنال فعال (${symbolsList}) آماده ارسال هستند.`,
+          ? `تمامی ${sentCount} سیگنال فعال با قیمت‌های لحظه‌ای واقعی (${symbolsList}) به تلگرام شما ارسال شدند ✅`
+          : `${eligible.length} سیگنال فعال (${symbolsList}) آماده ارسال هستند (${lastError || 'برای ارسال مستقیم، توکن و Chat ID تلگرام را در تب تنظیمات وارد کنید'}).`,
     });
   });
 

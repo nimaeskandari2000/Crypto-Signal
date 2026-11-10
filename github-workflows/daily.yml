@@ -23,12 +23,13 @@ jobs:
         with:
           node-version: '22'
 
-      - name: Install dependencies (ZIP-friendly)
-        run: npm install --no-audit --no-fund
+      - name: Install dependencies (Public npm + ZIP-friendly)
+        run: npm install --no-package-lock --legacy-peer-deps --no-audit --no-fund
 
       - name: Send Daily Dollar, Gold & Crypto Report to Telegram
         env:
-          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
-          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN || vars.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID || vars.TELEGRAM_CHAT_ID }}
+          APP_URL: ${{ secrets.APP_URL || vars.APP_URL }}
           GITHUB_REPOSITORY: ${{ github.repository }}
         run: npm run daily

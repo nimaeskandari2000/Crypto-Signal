@@ -22,6 +22,8 @@ import {
   formatDailyPerformanceTelegramReport,
   formatDailyTelegramReport,
   formatForTelegramApiHtml,
+  sanitizeTelegramChatId,
+  sanitizeTelegramToken,
 } from '../src/engine/quantEngine';
 
 dotenv.config();
@@ -29,6 +31,26 @@ dotenv.config();
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const PUBLIC_STATE_PATH = path.resolve(__dirname, '..', 'public', 'data', 'bot_state.json');
+
+async function resolveChatIdFromUpdates(token: string): Promise<string> {
+  try {
+    const res = await fetch(`https://api.telegram.org/bot${token}/getUpdates?limit=10`);
+    if (!res.ok) return '';
+    const data = (await res.json()) as any;
+    const updates = Array.isArray(data?.result) ? data.result : [];
+    for (let i = updates.length - 1; i >= 0; i--) {
+      const u = updates[i];
+      const cid =
+        u?.message?.chat?.id ??
+        u?.channel_post?.chat?.id ??
+        u?.my_chat_member?.chat?.id;
+      if (cid) return String(cid);
+    }
+  } catch {
+    // ignore
+  }
+  return '';
+}
 
 async function main() {
   console.log('=== [QuantPulse] تولید و ارسال گزارش روزانه ۰۸:۰۰ تهران + کارنامه نرخ موفقیت سیگنال‌ها ===');
@@ -86,12 +108,16 @@ async function main() {
   console.log('\n' + reportText + '\n');
   console.log('\n' + performanceReportText + '\n');
 
-  const token = process.env.TELEGRAM_BOT_TOKEN?.trim();
-  const chatId = process.env.TELEGRAM_CHAT_ID?.trim();
+  const token = sanitizeTelegramToken(process.env.TELEGRAM_BOT_TOKEN || settings.telegramBotToken);
+  let chatId = sanitizeTelegramChatId(process.env.TELEGRAM_CHAT_ID || settings.telegramChatId);
+  if (token && !chatId) {
+    chatId = await resolveChatIdFromUpdates(token);
+  }
+
   if (token && chatId) {
     for (const msg of [reportText, performanceReportText]) {
       const htmlFormatted = formatForTelegramApiHtml(msg);
-      const res = await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
+      let res = await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -101,6 +127,17 @@ async function main() {
           disable_web_page_preview: true,
         }),
       });
+      if (!res.ok) {
+        res = await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            chat_id: chatId,
+            text: msg,
+            disable_web_page_preview: true,
+          }),
+        });
+      }
       if (res.ok) {
         console.log('[Telegram] پیام روزانه با موفقیت ارسال شد.');
       } else {

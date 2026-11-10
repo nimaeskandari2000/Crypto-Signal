@@ -1196,7 +1196,7 @@ export function buildInitialSignals(usdtIrt = 265000): Signal[] {
 
     const costToTp1Ratio = tp1Dist > 0 ? roundTripCostPerUnit / tp1Dist : 0.25;
     const isEconomicallyJustified =
-      netRrTp1 >= 1.75 && netProfitTp1Pct >= 1.8 && costToTp1Ratio <= 0.22;
+      netRrTp1 >= 1.25 && netProfitTp1Pct >= 1.2 && costToTp1Ratio <= 0.30;
 
     const pillars = computeOrthogonalScore({
       patternCleanliness0to1: item.patternCleanliness0to1,

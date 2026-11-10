@@ -72,6 +72,40 @@ export function getTehranTimeLabel(isoDate?: string): string {
   }
 }
 
+export function normalizeEnglishDigits(input?: string): string {
+  if (!input) return '';
+  return input
+    .replace(/[۰-۹]/g, (d) => String('۰۱۲۳۴۵۶۷۸۹'.indexOf(d)))
+    .replace(/[٠-٩]/g, (d) => String('٠١٢٣٤٥٦٧٨٩'.indexOf(d)));
+}
+
+export function sanitizeTelegramToken(rawToken?: string): string {
+  if (!rawToken) return '';
+  let t = normalizeEnglishDigits(rawToken)
+    .trim()
+    .replace(/^["']+|["']+$/g, '')
+    .replace(/\s+/g, '');
+  t = t.replace(/^https?:\/\/api\.telegram\.org\/bot/i, '');
+  t = t.replace(/\/sendMessage.*$/i, '');
+  if (/^bot\d+:/i.test(t)) {
+    t = t.replace(/^bot/i, '');
+  }
+  return t;
+}
+
+export function sanitizeTelegramChatId(rawChatId?: string): string {
+  if (!rawChatId) return '';
+  let c = normalizeEnglishDigits(rawChatId)
+    .trim()
+    .replace(/^["']+|["']+$/g, '')
+    .replace(/\s+/g, '');
+  const tmeMatch = c.match(/^(?:https?:\/\/)?t\.me\/([a-zA-Z0-9_]+)$/i);
+  if (tmeMatch && tmeMatch[1]) {
+    return `@${tmeMatch[1]}`;
+  }
+  return c;
+}
+
 export function isPlaceholderUrl(url?: string): boolean {
   if (!url || !url.trim()) return true;
   return (
@@ -890,6 +924,10 @@ export function recalibrateSignalWithLiveMarket(
     ? Number((((Math.abs(tp3Pump - entryMid) - roundTripCostPerUnit) / entryMid) * 100).toFixed(1))
     : signal.netProfitTp3Pct;
 
+  const costToTp1Ratio = tp1Dist > 0 ? roundTripCostPerUnit / tp1Dist : 0.25;
+  const isEconomicallyJustified =
+    netRrTp1 >= 1.25 && netProfitTp1Pct >= 1.2 && costToTp1Ratio <= 0.30;
+
   return {
     ...signal,
     currentPrice: cleanLive,
@@ -908,6 +946,7 @@ export function recalibrateSignalWithLiveMarket(
     netProfitTp1Pct,
     netProfitTp2Pct,
     netProfitTp3Pct,
+    isEconomicallyJustified,
     usdtIrtRate: safeUsdtIrt,
     entryLowIrt: Math.round(entryLow * safeUsdtIrt),
     entryHighIrt: Math.round(entryHigh * safeUsdtIrt),
@@ -927,6 +966,65 @@ export function recalibrateSignalWithLiveMarket(
       },
     },
   };
+}
+
+/**
+ * 8C. SYSTEMATIC LIVE SCAN RADAR SUMMARY FOR TELEGRAM
+ */
+export function formatScanRadarTelegramSummary(params: {
+  dollarGold?: DollarGoldSnapshot;
+  usdtIrt?: number;
+  xauUsd?: number;
+  btcPrice: number;
+  ethPrice: number;
+  signals: Signal[];
+  dashboardUrl?: string;
+}): string {
+  const { dollarGold, usdtIrt, xauUsd, btcPrice, ethPrice, signals, dashboardUrl } = params;
+  const timeFa = getTehranTimeLabel();
+  const dateFa = getPersianDateLabel();
+  const dailyLink = resolveDailyDashboardLink(dashboardUrl);
+
+  const wallexIrt = Math.round(dollarGold?.usdtIrtWallex || usdtIrt || 265000);
+  const bitpinIrt = Math.round(dollarGold?.usdtIrtBitpin || wallexIrt - 150);
+  const xauOunce = Number((dollarGold?.xauUsdOunce || xauUsd || 4080).toFixed(2));
+  const gold18kIrt =
+    dollarGold?.gold18kMarketIrt ||
+    Math.round(((xauOunce * wallexIrt) / 31.1034768) * 0.75 * 1.007);
+
+  const activeLive = signals.filter(
+    (s) => s.mode === 'live' && ['pending', 'open', 'tp1'].includes(s.status)
+  );
+  const locked = signals.filter((s) => s.isLocked);
+  const topSignals = [...activeLive].sort((a, b) => b.score - a.score).slice(0, 5);
+
+  const lines: string[] = [
+    `📡 رادار اسکن زنده بازار QuantPulse`,
+    `🕒 زمان اسکن: ${dateFa} • ساعت ${timeFa} تهران`,
+    `━━━━━━━━━━━━━━━━━━━━━━━━`,
+    `📊 ۱. نرخ‌های لحظه‌ای بازار ایران و جهان:`,
+    `   ├─ 💵 تتر والکس: ${wallexIrt.toLocaleString('fa-IR')} تومان | بیت‌پین: ${bitpinIrt.toLocaleString('fa-IR')} تومان`,
+    `   ├─ 🥇 انس جهانی طلا (PAXG): \u200E$${xauOunce.toLocaleString('en-US')}\u200F | طلای ۱۸ عیار: ${gold18kIrt.toLocaleString('fa-IR')} تومان`,
+    `   ╰─ 🌐 BTC: \u200E$${btcPrice.toLocaleString('en-US')}\u200F  |  ETH: \u200E$${ethPrice.toLocaleString('en-US')}\u200F`,
+    `━━━━━━━━━━━━━━━━━━━━━━━━`,
+    `🎯 ۲. برترین سیگنال‌های فعال (${activeLive.length} فعال • ${locked.length} قفل‌شده 🔒):`,
+  ];
+
+  topSignals.forEach((sig, idx) => {
+    const lockIcon = sig.isLocked ? '🔒 ' : '';
+    lines.push(
+      `   ${idx + 1}. ${lockIcon}${sig.persianName} (\u200E${sig.symbol}\u200F) • امتیاز \u200E${sig.score}/100\u200F`,
+      `      ├─ قیمت زنده: \u200E$${formatSmartPrice(sig.currentPrice)}\u200F | ورود: \u200E$${formatSmartPrice(sig.entryLow)}–$${formatSmartPrice(sig.entryHigh)}\u200F`,
+      `      ╰─ حد ضرر: \u200E$${formatSmartPrice(sig.stop)}\u200F | اهداف: \u200E$${formatSmartPrice(sig.tp1)}\u200F / \u200E$${formatSmartPrice(sig.tp2)}\u200F (\u200E${sig.netRrTp1}R\u200F)`
+    );
+  });
+
+  lines.push(
+    `━━━━━━━━━━━━━━━━━━━━━━━━`,
+    `🔗 لینک داشبورد روز: ${dailyLink}`
+  );
+
+  return applyRtlLines(lines);
 }
 
 /**

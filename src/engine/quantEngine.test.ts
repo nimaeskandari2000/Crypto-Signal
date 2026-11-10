@@ -4,16 +4,18 @@ import {
   calculatePositionSizing,
   computeGoldIntrinsicAndBubble,
   computeOrthogonalScore,
-  computeSignalWinRateMetrics,
   detectConfirmedSwings,
   evaluateCircuitBreaker,
   evaluateSignalLifecycle,
   evaluateUserExecutedTrade,
   formatForTelegramApiHtml,
   formatLockedSignalsTelegramReport,
+  formatScanRadarTelegramSummary,
   formatTelegramSignalMessage,
   recalibrateSignalWithLiveMarket,
   resolveDailyDashboardLink,
+  sanitizeTelegramChatId,
+  sanitizeTelegramToken,
 } from './quantEngine';
 import { Candle, StrategyValidationMetrics } from './types';
 import {
@@ -201,16 +203,40 @@ test('Live Market Recalibration, Signal Locking, High-Pump Radar, Forex Tokenize
   const signals = buildInitialSignals(264910);
   const trades = buildInitialExecutedTrades(264910);
 
-  // Verify all 4 categories exist
+  // Verify all 4 categories exist and all 16 initial signals are economically justified
   const pumpSignals = signals.filter((s) => s.category === 'high_pump');
   const forexSignals = signals.filter((s) => s.category === 'forex_tokenized');
   const coreSignals = signals.filter((s) => s.category === 'core_crypto');
   const goldSignals = signals.filter((s) => s.category === 'gold_dollar');
+  const justifiedSignals = signals.filter((s) => s.isEconomicallyJustified);
 
   assert.equal(pumpSignals.length, 5, 'Should have 5 high-pump signals');
   assert.equal(forexSignals.length, 6, 'Should have 6 forex & tokenized RWA signals');
   assert.ok(coreSignals.length >= 4, 'Should have core crypto signals');
   assert.equal(goldSignals.length, 1, 'Should have PAXG/USDT gold signal');
+  assert.ok(
+    justifiedSignals.length >= 16,
+    `Expected at least 16 economically justified signals, got ${justifiedSignals.length}`
+  );
+
+  // Verify Telegram Token & Chat ID Sanitization (handles Persian digits, bot prefix, quotes)
+  assert.equal(
+    sanitizeTelegramToken(' "bot۱۲۳۴۵۶۷۸۹:ABCdef_123" '),
+    '123456789:ABCdef_123'
+  );
+  assert.equal(sanitizeTelegramChatId(' "۹۸۷۶۵۴۳۲۱" '), '987654321');
+
+  // Verify Scan Radar Telegram Summary includes market rates and top signals
+  const radarMsg = formatScanRadarTelegramSummary({
+    signals,
+    btcPrice: 74500,
+    ethPrice: 2350,
+    usdtIrt: 265000,
+    xauUsd: 4080,
+    dashboardUrl: DEFAULT_BOT_SETTINGS.dashboardUrl,
+  });
+  assert.ok(radarMsg.includes('رادار اسکن زنده بازار QuantPulse'));
+  assert.ok(radarMsg.includes('74,500'));
 
   // Verify Signal Locking freezes entry/SL/TP while updating live progress
   const lockedPaxg = signals.find((s) => s.symbol === 'PAXG/USDT')!;
@@ -271,3 +297,4 @@ test('Live Market Recalibration, Signal Locking, High-Pump Radar, Forex Tokenize
   else delete process.env.GITHUB_REPOSITORY;
   if (prevAppUrl !== undefined) process.env.APP_URL = prevAppUrl;
 });
+

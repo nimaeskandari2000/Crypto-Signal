@@ -39,9 +39,12 @@ import {
   formatExecutedTradeTelegramMessage,
   formatForTelegramApiHtml,
   formatLockedSignalsTelegramReport,
+  formatScanRadarTelegramSummary,
   formatTelegramSignalMessage,
   getPersianDateLabel,
   recalibrateSignalWithLiveMarket,
+  sanitizeTelegramChatId,
+  sanitizeTelegramToken,
 } from './engine/quantEngine';
 import { SignalsWorkspace } from './components/SignalsWorkspace';
 import { PumpAndForexView } from './components/PumpAndForexView';
@@ -197,50 +200,176 @@ export default function App() {
     );
   };
 
-  const handleSendTelegram = async (text: string, title: string) => {
+  const sendTelegramDirectFromBrowser = async (
+    text: string,
+    title: string,
+    overrideToken?: string,
+    overrideChatId?: string
+  ): Promise<{ ok: boolean; message: string; resolvedChatId?: string }> => {
+    const token = sanitizeTelegramToken(overrideToken ?? settings.telegramBotToken);
+    let chatId = sanitizeTelegramChatId(overrideChatId ?? settings.telegramChatId);
+
+    if (!token) {
+      return {
+        ok: false,
+        message: `برای ارسال «${title}» به تلگرام، ابتدا توکن ربات (TELEGRAM_BOT_TOKEN) و Chat ID را در تب «تنظیمات، زمان‌بندی و API» وارد و ذخیره کنید.`,
+      };
+    }
+
+    if (!chatId) {
+      try {
+        const updRes = await fetch(`https://api.telegram.org/bot${token}/getUpdates?limit=15`);
+        if (updRes.ok) {
+          const updJson = (await updRes.json()) as any;
+          const updates = Array.isArray(updJson?.result) ? updJson.result : [];
+          for (let i = updates.length - 1; i >= 0; i--) {
+            const u = updates[i];
+            const cid =
+              u?.message?.chat?.id ??
+              u?.channel_post?.chat?.id ??
+              u?.my_chat_member?.chat?.id;
+            if (cid) {
+              chatId = String(cid);
+              break;
+            }
+          }
+        }
+      } catch {
+        // ignore
+      }
+    }
+
+    if (!chatId) {
+      return {
+        ok: false,
+        message:
+          'شناسه چت (TELEGRAM_CHAT_ID) یافت نشد. در تلگرام دکمه Start را در ربات خود بزنید و در تب تنظیمات روی «تشخیص خودکار Chat ID» کلیک کنید.',
+      };
+    }
+
+    try {
+      const htmlFormatted = formatForTelegramApiHtml(text);
+      let tgRes = await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          chat_id: chatId,
+          text: htmlFormatted,
+          parse_mode: 'HTML',
+          disable_web_page_preview: true,
+        }),
+      });
+      if (!tgRes.ok) {
+        tgRes = await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            chat_id: chatId,
+            text: text,
+            disable_web_page_preview: true,
+          }),
+        });
+      }
+      if (tgRes.ok) {
+        if (chatId !== settings.telegramChatId) {
+          const nextSettings = { ...settings, telegramBotToken: token, telegramChatId: chatId };
+          setSettings(nextSettings);
+          try {
+            localStorage.setItem(LOCAL_STORAGE_SETTINGS_KEY, JSON.stringify(nextSettings));
+          } catch {
+            // ignore
+          }
+        }
+        return {
+          ok: true,
+          resolvedChatId: chatId,
+          message: `پیام «${title}» با موفقیت به تلگرام (${chatId}) ارسال شد ✅`,
+        };
+      }
+      const errBody = await tgRes.text();
+      return {
+        ok: false,
+        message: `خطای تلگرام: ${errBody.slice(0, 90)}`,
+      };
+    } catch {
+      return {
+        ok: false,
+        message: `عدم دسترسی مستقیم مرورگر به api.telegram.org (در گیت‌هاب از طریق GitHub Actions ارسال می‌شود).`,
+      };
+    }
+  };
+
+  const handleSendTelegram = async (
+    text: string,
+    title: string,
+    overrideToken?: string,
+    overrideChatId?: string
+  ) => {
     setTelegramFeedback(null);
+    const activeToken = sanitizeTelegramToken(overrideToken ?? settings.telegramBotToken);
+    const activeChatId = sanitizeTelegramChatId(overrideChatId ?? settings.telegramChatId);
+
     try {
       const res = await fetch('/api/telegram/send', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ text, title }),
+        body: JSON.stringify({
+          text,
+          title,
+          telegramBotToken: activeToken,
+          telegramChatId: activeChatId,
+        }),
       });
       if (res.ok && res.headers.get('content-type')?.includes('application/json')) {
         const data = await res.json();
+        if (data.sent) {
+          if (data.chatIdUsed && data.chatIdUsed !== settings.telegramChatId) {
+            const nextSettings = { ...settings, telegramChatId: data.chatIdUsed };
+            setSettings(nextSettings);
+            try {
+              localStorage.setItem(LOCAL_STORAGE_SETTINGS_KEY, JSON.stringify(nextSettings));
+            } catch {
+              // ignore
+            }
+          }
+          setTelegramFeedback(data.message);
+          setStatusBanner(data.message);
+          setTimeout(() => {
+            setTelegramFeedback(null);
+            setStatusBanner(null);
+          }, 6000);
+          return;
+        }
+        // Server didn't send (e.g., server couldn't reach Telegram or missing server token) -> try browser direct
+        if (activeToken) {
+          const direct = await sendTelegramDirectFromBrowser(text, title, activeToken, activeChatId);
+          if (direct.ok) {
+            setTelegramFeedback(direct.message);
+            setStatusBanner(direct.message);
+            setTimeout(() => {
+              setTelegramFeedback(null);
+              setStatusBanner(null);
+            }, 6000);
+            return;
+          }
+        }
         setTelegramFeedback(data.message);
-        setTimeout(() => setTelegramFeedback(null), 5000);
+        setStatusBanner(data.message);
+        setTimeout(() => {
+          setTelegramFeedback(null);
+          setStatusBanner(null);
+        }, 6000);
         return;
       }
       throw new Error('Static GitHub Pages Telegram fallback');
     } catch {
-      const token = settings.telegramBotToken?.trim();
-      const chatId = settings.telegramChatId?.trim();
-      if (token && chatId) {
-        try {
-          const htmlFormatted = formatForTelegramApiHtml(text);
-          const tgRes = await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              chat_id: chatId,
-              text: htmlFormatted,
-              parse_mode: 'HTML',
-              disable_web_page_preview: true,
-            }),
-          });
-          if (tgRes.ok) {
-            setTelegramFeedback(`پیام «${title}» مستقیماً به تلگرام (${chatId}) ارسال شد.`);
-            setTimeout(() => setTelegramFeedback(null), 5000);
-            return;
-          }
-        } catch {
-          // ignore
-        }
-      }
-      setTelegramFeedback(
-        `پیام «${title}» آماده ارسال است (در گیت‌هاب از طریق GitHub Secrets ارسال می‌شود).`
-      );
-      setTimeout(() => setTelegramFeedback(null), 5000);
+      const direct = await sendTelegramDirectFromBrowser(text, title, activeToken, activeChatId);
+      setTelegramFeedback(direct.message);
+      setStatusBanner(direct.message);
+      setTimeout(() => {
+        setTelegramFeedback(null);
+        setStatusBanner(null);
+      }, 6000);
     }
   };
 
@@ -250,7 +379,11 @@ export default function App() {
       const res = await fetch('/api/signals/toggle-lock', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ signalId }),
+        body: JSON.stringify({
+          signalId,
+          telegramBotToken: settings.telegramBotToken,
+          telegramChatId: settings.telegramChatId,
+        }),
       });
       if (res.ok && res.headers.get('content-type')?.includes('application/json')) {
         const data = await res.json();
@@ -267,11 +400,12 @@ export default function App() {
       }
       throw new Error('Static fallback');
     } catch {
+      let lockedTarget: Signal | null = null;
       setSignals((prev) =>
         prev.map((sig) => {
           if (sig.id !== signalId) return sig;
           const nextLocked = !sig.isLocked;
-          return {
+          const updated: Signal = {
             ...sig,
             isLocked: nextLocked,
             lockedAt: nextLocked ? new Date().toISOString() : undefined,
@@ -291,8 +425,16 @@ export default function App() {
               ? 'قفل سیگنال فعال شد — پایش خودکار ۵ دقیقه‌ای قیمت و اهداف فعال است.'
               : undefined,
           };
+          if (nextLocked) lockedTarget = updated;
+          return updated;
         })
       );
+      if (lockedTarget && settings.telegramBotToken) {
+        await handleSendTelegram(
+          formatTelegramSignalMessage(lockedTarget, settings),
+          `قفل سیگنال ${(lockedTarget as Signal).symbol}`
+        );
+      }
     }
   };
 
@@ -303,9 +445,19 @@ export default function App() {
       const res = await fetch('/api/telegram/send-locked-status', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          telegramBotToken: settings.telegramBotToken,
+          telegramChatId: settings.telegramChatId,
+        }),
       });
       if (res.ok && res.headers.get('content-type')?.includes('application/json')) {
         const data = await res.json();
+        if (!data.sent && settings.telegramBotToken) {
+          const locked = signals.filter((s) => s.isLocked);
+          const reportText = formatLockedSignalsTelegramReport(locked, settings.dashboardUrl);
+          await handleSendTelegram(reportText, 'گزارش پایش سیگنال‌های قفل‌شده');
+          return;
+        }
         setTelegramFeedback(data.message);
         setStatusBanner(data.message);
         setTimeout(() => {
@@ -570,6 +722,8 @@ export default function App() {
         body: JSON.stringify({
           usdtIrtWallex: customUsdtIrt,
           xauUsdOunce: customXauUsd,
+          telegramBotToken: settings.telegramBotToken,
+          telegramChatId: settings.telegramChatId,
         }),
       });
       if (res.ok && res.headers.get('content-type')?.includes('application/json')) {
@@ -588,26 +742,126 @@ export default function App() {
       }
       throw new Error('Static GitHub Pages fallback');
     } catch {
-      const nextWallex =
+      // Browser-direct live market scan for GitHub Pages static deployment!
+      let nextWallex =
         customUsdtIrt && customUsdtIrt > 30000 ? customUsdtIrt : dollarGold.usdtIrtWallex;
-      const nextXau =
+      let nextXau =
         customXauUsd && customXauUsd > 1500 ? customXauUsd : dollarGold.xauUsdOunce;
+      let nextBtc = macro.btcPrice;
+      let nextEth = macro.ethPrice;
+      const liveAssetPrices: Record<string, number> = {};
+
+      // 1. Try Kraken Public API (CORS-enabled in browsers worldwide)
+      try {
+        const krRes = await fetch(
+          'https://api.kraken.com/0/public/Ticker?pair=XBTUSD,ETHUSD,PAXGUSD,SOLUSD,AVAXUSD,LINKUSD,SUIUSD,PEPEUSD,ARBUSD,RENDERUSD,ONDOUSD,ETHFIUSD,EURUSD'
+        );
+        if (krRes.ok) {
+          const krJson = (await krRes.json()) as any;
+          const r = krJson?.result || {};
+          const pick = (keys: string[]) => {
+            for (const k of keys) {
+              const v = Number(r[k]?.c?.[0]);
+              if (v > 0) return v;
+            }
+            return 0;
+          };
+          const btc = pick(['XXBTZUSD', 'XBTUSD']);
+          const eth = pick(['XETHZUSD', 'ETHUSD']);
+          const paxg = pick(['PAXGUSD']);
+          if (btc > 10000) {
+            nextBtc = Number(btc.toFixed(2));
+            liveAssetPrices.BTC = nextBtc;
+          }
+          if (eth > 500) {
+            nextEth = Number(eth.toFixed(2));
+            liveAssetPrices.ETH = nextEth;
+          }
+          if (paxg > 1800 && (!customXauUsd || customXauUsd <= 1500)) {
+            nextXau = Number(paxg.toFixed(2));
+            liveAssetPrices.PAXG = nextXau;
+          }
+          const sol = pick(['SOLUSD']);
+          const avax = pick(['AVAXUSD']);
+          const link = pick(['LINKUSD']);
+          const sui = pick(['SUIUSD']);
+          const pepe = pick(['PEPEUSD']);
+          const arb = pick(['ARBUSD']);
+          const render = pick(['RENDERUSD']);
+          const ondo = pick(['ONDOUSD']);
+          const ethfi = pick(['ETHFIUSD']);
+          const eur = pick(['ZEURZUSD', 'EURUSD']);
+          if (sol > 5) liveAssetPrices.SOL = Number(sol.toFixed(2));
+          if (avax > 1) liveAssetPrices.AVAX = Number(avax.toFixed(2));
+          if (link > 1) liveAssetPrices.LINK = Number(link.toFixed(2));
+          if (sui > 0.1) liveAssetPrices.SUI = Number(sui.toFixed(4));
+          if (pepe > 0) liveAssetPrices.PEPE = Number(pepe.toFixed(8));
+          if (arb > 0.05) liveAssetPrices.ARB = Number(arb.toFixed(4));
+          if (render > 0.2) liveAssetPrices.RENDER = Number(render.toFixed(3));
+          if (ondo > 0.05) liveAssetPrices.ONDO = Number(ondo.toFixed(4));
+          if (ethfi > 0.05) liveAssetPrices.ETHFI = Number(ethfi.toFixed(4));
+          if (eur > 0.8) liveAssetPrices.EUR = Number(eur.toFixed(4));
+        }
+      } catch {
+        // ignore
+      }
+
+      // 2. Try Wallex Public API if reachable from user's browser
+      if (!customUsdtIrt || customUsdtIrt <= 30000) {
+        try {
+          const wxRes = await fetch('https://api.wallex.ir/v1/markets');
+          if (wxRes.ok) {
+            const wxJson = (await wxRes.json()) as any;
+            const lastTmn = Number(wxJson?.result?.symbols?.USDTTMN?.stats?.lastPrice);
+            if (lastTmn >= 50000 && lastTmn <= 1000000) {
+              nextWallex = Math.round(lastTmn);
+            }
+          }
+        } catch {
+          // ignore
+        }
+      }
+
       const updatedDg = buildInitialDollarGoldSnapshot(
         nextWallex,
         Math.round(nextWallex - 180),
         nextXau
       );
       setDollarGold(updatedDg);
-      setSignals((prev) => recomputeLocalSignalsIrt(updatedDg.usdtIrtAverage, prev));
+
+      const updatedSignals = signals.map((sig) => {
+        const liveP = liveAssetPrices[sig.baseAsset] ?? sig.currentPrice;
+        return recalibrateSignalWithLiveMarket(sig, liveP, updatedDg.usdtIrtAverage);
+      });
+      setSignals(updatedSignals);
+
       setMacro((prev) => ({
         ...prev,
+        btcPrice: nextBtc,
+        ethPrice: nextEth,
         lastScanAt: new Date().toISOString(),
         scanCount: prev.scanCount + 1,
       }));
-      setStatusBanner('اسکن و بازمحاسبه نرخ‌های زنده والکس، بیت‌پین، دلار و طلا انجام شد.');
+
+      let tgNote = '';
+      if (settings.autoSendTelegramOnScan && settings.telegramBotToken) {
+        const radarMsg = formatScanRadarTelegramSummary({
+          dollarGold: updatedDg,
+          btcPrice: nextBtc,
+          ethPrice: nextEth,
+          signals: updatedSignals,
+          dashboardUrl: settings.dashboardUrl,
+        });
+        const directRes = await sendTelegramDirectFromBrowser(radarMsg, 'رادار اسکن زنده');
+        tgNote = directRes.ok ? ' | به تلگرام ارسال شد ✅' : ` | ${directRes.message}`;
+      }
+
+      setStatusBanner(
+        `اسکن زنده انجام شد — تتر: ${updatedDg.usdtIrtWallex.toLocaleString('fa-IR')} تومان | انس طلا: $${updatedDg.xauUsdOunce} | BTC: $${nextBtc}${tgNote}`
+      );
     } finally {
       setIsScanning(false);
-      setTimeout(() => setStatusBanner(null), 5000);
+      setTimeout(() => setStatusBanner(null), 6000);
     }
   };
 
@@ -615,6 +869,14 @@ export default function App() {
     const merged: BotSettings = {
       ...settings,
       ...updated,
+      telegramBotToken:
+        updated.telegramBotToken !== undefined
+          ? sanitizeTelegramToken(updated.telegramBotToken)
+          : settings.telegramBotToken,
+      telegramChatId:
+        updated.telegramChatId !== undefined
+          ? sanitizeTelegramChatId(updated.telegramChatId)
+          : settings.telegramChatId,
       referenceEquityIrt: Math.round(
         (updated.referenceEquityUsdt ?? settings.referenceEquityUsdt) *
           dollarGold.usdtIrtAverage
@@ -631,7 +893,7 @@ export default function App() {
       const res = await fetch('/api/settings', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(updated),
+        body: JSON.stringify(merged),
       });
       if (res.ok && res.headers.get('content-type')?.includes('application/json')) {
         const data = await res.json();
@@ -1001,16 +1263,34 @@ export default function App() {
                 const res = await fetch('/api/telegram/send-all-signals', {
                   method: 'POST',
                   headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({
+                    telegramBotToken: settings.telegramBotToken,
+                    telegramChatId: settings.telegramChatId,
+                  }),
                 });
                 if (res.ok && res.headers.get('content-type')?.includes('application/json')) {
                   const data = await res.json();
-                  setTelegramFeedback(data.message);
-                  setStatusBanner(data.message);
-                  setTimeout(() => {
-                    setTelegramFeedback(null);
-                    setStatusBanner(null);
-                  }, 5000);
-                  return;
+                  if (data.sent) {
+                    if (data.detectedChatId && data.detectedChatId !== settings.telegramChatId) {
+                      setSettings((prev) => ({ ...prev, telegramChatId: data.detectedChatId }));
+                    }
+                    setTelegramFeedback(data.message);
+                    setStatusBanner(data.message);
+                    setTimeout(() => {
+                      setTelegramFeedback(null);
+                      setStatusBanner(null);
+                    }, 5000);
+                    return;
+                  }
+                  if (!settings.telegramBotToken) {
+                    setTelegramFeedback(data.message);
+                    setStatusBanner(data.message);
+                    setTimeout(() => {
+                      setTelegramFeedback(null);
+                      setStatusBanner(null);
+                    }, 5000);
+                    return;
+                  }
                 }
                 throw new Error('Static fallback');
               } catch {
@@ -1112,6 +1392,8 @@ export default function App() {
             settings={settings}
             onSaveSettings={handleSaveSettings}
             onSendTelegram={handleSendTelegram}
+            onRunScan={() => handleRunScan()}
+            isScanning={isScanning}
             telegramFeedback={telegramFeedback}
           />
         )}
