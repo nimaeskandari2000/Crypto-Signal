@@ -32,6 +32,7 @@ import {
   formatTelegramSignalMessage,
   getPersianDateLabel,
   recalibrateSignalWithLiveMarket,
+  resolveBaseDashboardUrl,
   resolveDailyDashboardLink,
   sanitizeTelegramChatId,
   sanitizeTelegramToken,
@@ -174,9 +175,9 @@ async function main() {
     ...DEFAULT_BOT_SETTINGS,
     ...(existingState?.settings || {}),
     telegramBotToken: '',
-    dashboardUrl: resolveDailyDashboardLink(
-      process.env.APP_URL || existingState?.settings?.dashboardUrl || DEFAULT_BOT_SETTINGS.dashboardUrl
-    ).split('?')[0],
+    dashboardUrl: resolveBaseDashboardUrl(
+      existingState?.settings?.dashboardUrl || DEFAULT_BOT_SETTINGS.dashboardUrl
+    ),
   };
 
   let usdtIrtWallex = Number(existingState?.dollarGold?.usdtIrtWallex) >= 50000

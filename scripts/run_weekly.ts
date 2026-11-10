@@ -52,22 +52,11 @@ async function main() {
   });
 
   const weeklyReport = [
-    `\u200F🏆 گزارش هفتگی عملکرد، کالبدشکافی و کالیبراسیون (QuantPulse)`,
-    `\u200F📅 تاریخ: ${persianDate}  |  شنبه ساعت ۰۸:۰۰ تهران`,
-    `\u200F━━━━━━━━━━━━━━━━━━━━━━━━`,
-    `\u200F📊 ۱. خلاصه عملکرد استراتژی‌های فعال (${activeStrategies.length} مدل Live):`,
-    `\u200F   ├─ بهترین مدل هفته: پوشش طلا و تتر (\u200EPAXG/USDT\u200F) • امید ریاضی: \u200E+0.41R\u200F`,
-    `\u200F   ├─ مدل شکار نقدینگی (SMC Sweep): امید ریاضی ۳۰ معامله اخیر \u200E+0.36R\u200F`,
-    `\u200F   ╰─ کلید قطع خودکار (Circuit Breaker): ✅ پایدار (هیچ مدلی به سقف ۸ ضرر پیاپی نرسیده است)`,
-    `\u200F📈 ۲. کالبدشکافی خودکار ضررها (Postmortem):`,
-    `\u200F   ├─ پرتکرارترین علت ضرر: ${topLossReason.persianLabel} (\u200E${topLossReason.shareOfLossesPct}%\u200F از ضررها • میانگین \u200E${topLossReason.avgRealizedR}R\u200F)`,
-    `\u200F   ╰─ قانون محافظتی پیشنهادی: ${topLossReason.suggestedRule}`,
-    `\u200F⚖️ ۳. وضعیت کالیبراسیون قهرمان و رقیب (Champion vs. Challenger):`,
-    `\u200F   ├─ دوره آزمایش موازی: ${INITIAL_CHALLENGER.weeksRunning} هفته (${INITIAL_CHALLENGER.shadowTradesCount} معامله Shadow)`,
-    `\u200F   ├─ امید ریاضی قهرمان: \u200E+${INITIAL_CHALLENGER.championExpectancyR}R\u200F  |  امید ریاضی رقیب: \u200E+${INITIAL_CHALLENGER.challengerExpectancyR}R\u200F`,
-    `\u200F   ╰─ وضعیت ارتقا: آماده تأیید شما در کنسول مدیریت`,
-    `\u200F━━━━━━━━━━━━━━━━━━━━━━━━`,
-    `\u200F🔗 لینک یکتای این پیام: ${dailyLink}`,
+    `\u200F🏆 گزارش هفتگی و کالیبراسیون | ${persianDate}`,
+    `\u200F📊 مدل‌های فعال: ${activeStrategies.length} استراتژی | بهترین: PAXG/USDT (\u200E+0.41R\u200F) و SMC Sweep (\u200E+0.36R\u200F)`,
+    `\u200F🛡 وضعیت Circuit Breaker: پایدار | علت اول ضرر: ${topLossReason.persianLabel} (\u200E${topLossReason.shareOfLossesPct}%\u200F)`,
+    `\u200F⚖️ قهرمان در برابر رقیب (${INITIAL_CHALLENGER.weeksRunning} هفته): \u200E+${INITIAL_CHALLENGER.championExpectancyR}R\u200F vs \u200E+${INITIAL_CHALLENGER.challengerExpectancyR}R\u200F`,
+    `\u200F🔗 لینک یکتای گیت‌هاب: ${dailyLink}`,
   ].join('\n');
 
   console.log('\n' + weeklyReport + '\n');

@@ -442,7 +442,7 @@ iran:
                   id="cfg-dashboard-url"
                   type="url"
                   dir="ltr"
-                  placeholder="https://ais-pre-exqckvugreomt7fj53xtbk-422970538904.us-east5.run.app"
+                  placeholder="https://nimaeskandari.github.io/quantpulse-bot"
                   value={formState.dashboardUrl || ''}
                   onChange={(e) =>
                     setFormState({ ...formState, dashboardUrl: e.target.value })
@@ -705,18 +705,12 @@ iran:
                   tab: 'settings',
                 });
                 const testMsg = [
-                  '\u200F✅ تست اتصال سیستماتیک ربات سیگنال‌دهی QuantPulse',
-                  `\u200F📅 تاریخ: ${todayFa}`,
-                  '\u200F━━━━━━━━━━━━━━━━━━━━━━━━',
-                  '\u200F📊 وضعیت اتصال و منابع داده زنده:',
-                  '\u200F   ├─ 🏛 صرافی‌های اسپات ایران: والکس (Wallex) و بیت‌پین (Bitpin)',
-                  '\u200F   ├─ 🌍 فیدهای جهانی بدون کلید: کراکن (Kraken) + یاهو فایننس (سهام توکنیزه)',
-                  `\u200F   ├─ ⏱ سیکل اسکن جامع بازار و شکارچی پامپ: هر ${formState.scanIntervalMinutes} دقیقه`,
-                  `\u200F   ╰─ 🔐 سیکل پایش سیگنال‌های قفل‌شده: هر ${formState.lockedMonitorIntervalMinutes} دقیقه`,
-                  '\u200F━━━━━━━━━━━━━━━━━━━━━━━━',
-                  `\u200F🔗 لینک یکتای این پیام: ${dailyLink}`,
+                  `\u200F✅ تست اتصال ربات سیگنال‌دهی QuantPulse | ${todayFa}`,
+                  `\u200F🏛 منابع زنده: والکس، بیت‌پین، کراکن و فید سهام توکنیزه`,
+                  `\u200F⏱ سیکل اسکن: هر ${formState.scanIntervalMinutes} دقیقه | پایش قفل: هر ${formState.lockedMonitorIntervalMinutes} دقیقه`,
+                  `\u200F🔗 لینک یکتای گیت‌هاب: ${dailyLink}`,
                 ].join('\n');
-                await onSendTelegram(testMsg, 'تست اتصال و لینک زنده داشبورد');
+                await onSendTelegram(testMsg, 'تست اتصال و لینک گیت‌هاب');
               }}
               className="inline-flex items-center gap-2 px-4 py-2.5 text-xs font-medium bg-slate-100 dark:bg-slate-800 text-slate-900 dark:text-slate-100 rounded-lg hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors"
             >

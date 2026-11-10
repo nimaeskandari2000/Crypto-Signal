@@ -29,6 +29,7 @@ import {
   formatTelegramSignalMessage,
   getPersianDateLabel,
   recalibrateSignalWithLiveMarket,
+  resolveBaseDashboardUrl,
   resolveDailyDashboardLink,
   sanitizeTelegramChatId,
   sanitizeTelegramToken,
@@ -55,9 +56,7 @@ let botSettings: BotSettings = {
   ...DEFAULT_BOT_SETTINGS,
   telegramBotToken: process.env.TELEGRAM_BOT_TOKEN || DEFAULT_BOT_SETTINGS.telegramBotToken,
   telegramChatId: process.env.TELEGRAM_CHAT_ID || DEFAULT_BOT_SETTINGS.telegramChatId,
-  dashboardUrl:
-    process.env.APP_URL ||
-    DEFAULT_BOT_SETTINGS.dashboardUrl,
+  dashboardUrl: resolveBaseDashboardUrl(DEFAULT_BOT_SETTINGS.dashboardUrl),
 };
 
 let dollarGoldSnapshot: DollarGoldSnapshot = buildInitialDollarGoldSnapshot();
@@ -97,9 +96,9 @@ function loadPersistedState() {
         botSettings = {
           ...botSettings,
           ...parsed.botSettings,
-          dashboardUrl: resolveDailyDashboardLink(
-            parsed.botSettings.dashboardUrl || process.env.APP_URL || DEFAULT_BOT_SETTINGS.dashboardUrl
-          ).split('?')[0],
+          dashboardUrl: resolveBaseDashboardUrl(
+            parsed.botSettings.dashboardUrl || DEFAULT_BOT_SETTINGS.dashboardUrl
+          ),
         };
       }
       if (parsed.dollarGoldSnapshot) {

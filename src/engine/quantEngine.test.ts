@@ -235,7 +235,7 @@ test('Live Market Recalibration, Signal Locking, High-Pump Radar, Forex Tokenize
     xauUsd: 4080,
     dashboardUrl: DEFAULT_BOT_SETTINGS.dashboardUrl,
   });
-  assert.ok(radarMsg.includes('رادار اسکن زنده بازار QuantPulse'));
+  assert.ok(radarMsg.includes('رادار اسکن QuantPulse'));
   assert.ok(radarMsg.includes('74,500'));
 
   // Verify Signal Locking freezes entry/SL/TP while updating live progress
@@ -255,15 +255,16 @@ test('Live Market Recalibration, Signal Locking, High-Pump Radar, Forex Tokenize
   assert.equal(recalibratedEth.currentPrice, 2200);
   assert.ok(recalibratedEth.entryHigh < 2200 && recalibratedEth.entryLow > 2100);
 
-  // Verify working dashboard link replaces YOUR-USERNAME placeholders
+  // Verify working dashboard link replaces YOUR-USERNAME and .run.app placeholders with GitHub link
   const workingLink = resolveDailyDashboardLink('https://github.com/YOUR-USERNAME/quantpulse');
   assert.ok(!workingLink.includes('YOUR-USERNAME'), 'Should replace broken placeholder link');
-  assert.ok(workingLink.includes('?report='));
+  assert.ok(workingLink.includes('github.io'), 'Should resolve to GitHub Pages domain');
+  assert.ok(!workingLink.includes('.run.app'), 'Must never output .run.app link');
 
   // Verify Locked Signals Telegram Report
   const lockedList = signals.filter((s) => s.isLocked);
   const lockedReport = formatLockedSignalsTelegramReport(lockedList);
-  assert.ok(lockedReport.includes('گزارش پایش خودکار سیگنال‌های قفل‌شده'));
+  assert.ok(lockedReport.includes('پایش سیگنال‌های قفل‌شده'));
   assert.ok(lockedReport.includes('PAXG/USDT'));
 
   // Verify SOL executed trade hitting TP1
@@ -271,23 +272,25 @@ test('Live Market Recalibration, Signal Locking, High-Pump Radar, Forex Tokenize
   const evalResult = evaluateUserExecutedTrade(solTrade, 93.0, 265000);
   assert.equal(evalResult.updatedTrade.status, 'tp1_hit');
 
-  // Verify institutional Telegram signal bulletin includes live price, entry, SL, TP, net R:R, 4-pillar breakdown, and zero Toman equivalents
+  // Verify concise Telegram signal bulletin includes live price, entry, SL, TP, net R:R, zero Toman equivalents, and unique GitHub link
   const tgMsg = formatTelegramSignalMessage(signals[0], DEFAULT_BOT_SETTINGS);
   const tgMsg2 = formatTelegramSignalMessage(signals[1], DEFAULT_BOT_SETTINGS);
   assert.ok(tgMsg.startsWith('\u200F'));
-  assert.ok(tgMsg.includes('بولتن'));
-  assert.ok(tgMsg.includes('قیمت لحظه‌ای بازار:'));
-  assert.ok(tgMsg.includes('افق زمانی'));
-  assert.ok(tgMsg.includes('ریسک به ریوارد خالص:'));
-  assert.ok(tgMsg.includes('ماتریس ۴ ستون متعامد:'));
+  assert.ok(tgMsg.includes('قیمت فعلی:'));
+  assert.ok(tgMsg.includes('ورود:'));
+  assert.ok(tgMsg.includes('حد ضرر:'));
+  assert.ok(tgMsg.includes('تارگت ۱:'));
+  assert.ok(tgMsg.split('\n').length <= 10, 'Signal Telegram message must be concise (<= 10 lines)');
   assert.ok(!tgMsg.includes('تومان'), 'Signal Telegram message must not contain Toman equivalents');
-  assert.ok(tgMsg.includes('لینک یکتای این پیام:'));
+  assert.ok(tgMsg.includes('لینک یکتای گیت‌هاب:'));
 
-  // Verify every Telegram message gets a strictly unique deep-link URL
+  // Verify every Telegram message gets a strictly unique GitHub deep-link URL
   const url1 = tgMsg.match(/https?:\/\/[^\s]+/)?.[0];
   const url2 = tgMsg2.match(/https?:\/\/[^\s]+/)?.[0];
   assert.ok(url1 && url2, 'Both Telegram messages must contain valid URLs');
   assert.notEqual(url1, url2, 'Each Telegram message must have a strictly unique link');
+  assert.ok(url1.includes('github.io'), 'Unique link must be a GitHub link');
+  assert.ok(!url1.includes('.run.app'), 'Unique link must never be a .run.app preview link');
   assert.ok(url1.includes('msg=QP-SIGNAL-'), 'Unique link must include msg=QP-SIGNAL- identifier');
   assert.ok(url1.includes(`signal=${signals[0].id}`), 'Unique link must deep-link to the signal ID');
 

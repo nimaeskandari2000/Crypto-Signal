@@ -200,17 +200,12 @@ export const DollarGoldMacroView: React.FC<DollarGoldMacroViewProps> = ({
       symbol: 'USDTIRT',
     });
     const msg = [
-      `🟢 سیگنال خرید اسپات: USDT/IRT (تتر / تومان)`,
-      `💹 نرخ لحظه‌ای والکس: ${tetherSpotSignal.currentIrt.toLocaleString('fa-IR')} تومان | وضعیت: ${tetherSpotSignal.entryVerdict}`,
-      `⏳ افق زمانی: ${tetherSpotSignal.timeHorizonFa} | تایم‌فریم: ${tetherSpotSignal.timeframe}`,
-      `━━━━━━━━━━━━━━━━━━`,
-      `🔹 محدوده ورود پله‌ای: ${tetherSpotSignal.entryLowIrt.toLocaleString('fa-IR')} تا ${tetherSpotSignal.entryHighIrt.toLocaleString('fa-IR')} تومان`,
-      `🛑 حد ضرر (SL): ${tetherSpotSignal.stopIrt.toLocaleString('fa-IR')} تومان (ریسک: ${tetherSpotSignal.riskPct}%-)`,
-      `✅ هدف اول (TP1): ${tetherSpotSignal.tp1Irt.toLocaleString('fa-IR')} تومان (سود خالص: +${tetherSpotSignal.netTp1Pct}%)`,
-      `🎯 هدف دوم (TP2): ${tetherSpotSignal.tp2Irt.toLocaleString('fa-IR')} تومان (سود خالص: +${tetherSpotSignal.netTp2Pct}%)`,
-      `⚖️ ریسک به ریوارد خالص: ${tetherSpotSignal.netRrTp1}R (هدف ۱) | ${tetherSpotSignal.netRrTp2}R (هدف ۲)`,
-      `━━━━━━━━━━━━━━━━━━`,
-      `🔗 لینک یکتای این پیام: ${dailyLink}`,
+      `🟢 خرید اسپات: USDT/IRT (تتر / تومان) | ${tetherSpotSignal.timeframe}`,
+      `💹 نرخ فعلی: ${tetherSpotSignal.currentIrt.toLocaleString('fa-IR')} تومان | وضعیت: ${tetherSpotSignal.entryVerdict}`,
+      `🎯 ورود: ${tetherSpotSignal.entryLowIrt.toLocaleString('fa-IR')} تا ${tetherSpotSignal.entryHighIrt.toLocaleString('fa-IR')} تومان | 🛑 حد ضرر: ${tetherSpotSignal.stopIrt.toLocaleString('fa-IR')} (${tetherSpotSignal.riskPct}%-)`,
+      `✅ تارگت ۱: ${tetherSpotSignal.tp1Irt.toLocaleString('fa-IR')} (+${tetherSpotSignal.netTp1Pct}%) | 🎯 تارگت ۲: ${tetherSpotSignal.tp2Irt.toLocaleString('fa-IR')} (+${tetherSpotSignal.netTp2Pct}%)`,
+      `⚖️ ریسک به ریوارد خالص: ${tetherSpotSignal.netRrTp1}R / ${tetherSpotSignal.netRrTp2}R`,
+      `🔗 لینک یکتای گیت‌هاب: ${dailyLink}`,
     ]
       .map((line) => (line.trim().length > 0 ? `${RLM}${line}` : ''))
       .join('\n');

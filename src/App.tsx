@@ -43,6 +43,7 @@ import {
   formatTelegramSignalMessage,
   getPersianDateLabel,
   recalibrateSignalWithLiveMarket,
+  resolveBaseDashboardUrl,
   sanitizeTelegramChatId,
   sanitizeTelegramToken,
 } from './engine/quantEngine';
@@ -80,7 +81,14 @@ export default function App() {
   const [settings, setSettings] = useState<BotSettings>(() => {
     try {
       const saved = localStorage.getItem(LOCAL_STORAGE_SETTINGS_KEY);
-      if (saved) return { ...DEFAULT_BOT_SETTINGS, ...JSON.parse(saved) };
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        return {
+          ...DEFAULT_BOT_SETTINGS,
+          ...parsed,
+          dashboardUrl: resolveBaseDashboardUrl(parsed.dashboardUrl),
+        };
+      }
     } catch {
       // ignore
     }
@@ -175,6 +183,7 @@ export default function App() {
         setSettings((prev) => ({
           ...prev,
           ...data.settings,
+          dashboardUrl: resolveBaseDashboardUrl(data.settings.dashboardUrl || prev.dashboardUrl),
           telegramBotToken: data.settings.telegramBotToken || prev.telegramBotToken,
           telegramChatId: data.settings.telegramChatId || prev.telegramChatId,
         }));
