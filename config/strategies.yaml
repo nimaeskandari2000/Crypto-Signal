@@ -1,0 +1,75 @@
+# config/strategies.yaml — استراتژی‌های پرایس اکشن و پوشش طلا/دلار
+mode: manual
+
+strategies:
+  gold_dollar_hedge:
+    enabled: true
+    version: v2.4
+    markets: [spot_ir]
+    timeframes: [4h]
+    regimes: [bull_low_vol, bull_high_vol, range_low_vol]
+    params:
+      swing_length: 8
+      atr_buffer: 0.25
+      min_rr: 1.6
+      time_stop_candles: 24
+
+  liquidity_sweep:
+    enabled: true
+    version: v2.1
+    markets: [spot_ir, perp_global]
+    timeframes: [1h, 4h]
+    regimes: [bull_low_vol, bull_high_vol, range_low_vol]
+    params:
+      swing_length: 8
+      atr_buffer: 0.25
+      min_rr: 1.65
+      time_stop_candles: 18
+
+  break_retest:
+    enabled: true
+    version: v1.9
+    markets: [spot_ir, perp_global]
+    timeframes: [1h, 4h]
+    regimes: [bull_low_vol, bull_high_vol, bear_low_vol]
+    params:
+      swing_length: 10
+      atr_buffer: 0.30
+      min_rr: 1.7
+      time_stop_candles: 16
+
+  trend_pullback:
+    enabled: true
+    version: v2.0
+    markets: [spot_ir, perp_global]
+    timeframes: [4h]
+    regimes: [bull_low_vol]
+    params:
+      swing_length: 9
+      atr_buffer: 0.25
+      min_rr: 1.8
+      time_stop_candles: 20
+
+  relative_strength:
+    enabled: true
+    version: v1.7
+    markets: [spot_ir]
+    timeframes: [1h, 4h]
+    regimes: [bull_low_vol, range_low_vol]
+    params:
+      swing_length: 7
+      atr_buffer: 0.25
+      min_rr: 1.6
+      time_stop_candles: 14
+
+  squeeze_breakout:
+    enabled: false
+    version: v1.4
+    markets: [spot_ir, perp_global]
+    timeframes: [1h]
+    regimes: [bull_high_vol, range_low_vol]
+    params:
+      swing_length: 6
+      atr_buffer: 0.35
+      min_rr: 1.75
+      time_stop_candles: 12

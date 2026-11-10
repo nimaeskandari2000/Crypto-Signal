@@ -1,0 +1,6 @@
+{
+  "name": "QuantPulse Crypto Signal & Analytics",
+  "description": "Quantitative price-action crypto signal engine, walk-forward backtester, and multi-market risk analytics dashboard.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

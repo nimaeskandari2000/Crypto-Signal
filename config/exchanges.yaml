@@ -1,0 +1,27 @@
+# config/exchanges.yaml — زنجیره صرافی‌های جهانی مقاوم به تحریم IP گیت‌هاب + والکس و بیت‌پین
+global_data: [kucoin, kraken, gateio, bybit, binance]
+enable_perp_global: false
+
+iran:
+  default_exchange: wallex
+  quote_preference: BOTH
+  wallex:
+    enabled: true
+    maker_fee_pct: 0.20
+    taker_fee_pct: 0.25
+    pairs: [USDT, IRT]
+  bitpin:
+    enabled: true
+    maker_fee_pct: 0.20
+    taker_fee_pct: 0.25
+    pairs: [USDT, IRT]
+
+gold_and_dollar:
+  track_usdt_irt: true
+  track_paxg_and_xau: true
+  compute_18k_intrinsic_bubble: true
+
+slippage_pct:
+  major: 0.05
+  mid: 0.15
+  small: 0.35

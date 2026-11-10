@@ -1,0 +1,8 @@
+# config/calendar.yaml — تقویم رویدادهای کلان اقتصادی (توقف سیگنال جدید ۲ ساعت قبل و بعد)
+events:
+  - title: "US CPI Inflation Release"
+    timestamp_utc: "2026-11-12T13:30:00Z"
+    impact: "high"
+  - title: "FOMC Interest Rate Decision & Press Conference"
+    timestamp_utc: "2026-12-16T19:00:00Z"
+    impact: "high"
