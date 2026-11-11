@@ -11,7 +11,6 @@ import subprocess
 import zipfile
 
 ROOT_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
-BACKUP_WORKFLOWS_DIR = os.path.join(ROOT_DIR, "github-workflows")
 DOT_WORKFLOWS_DIR = os.path.join(ROOT_DIR, ".github", "workflows")
 OUTPUT_ZIP = os.path.join(ROOT_DIR, "public", "quantpulse-github-repo.zip")
 
@@ -35,14 +34,6 @@ EXCLUDE_FILES = {
 
 
 def ensure_git_initialized():
-    os.makedirs(BACKUP_WORKFLOWS_DIR, exist_ok=True)
-    if os.path.isdir(DOT_WORKFLOWS_DIR):
-        for fname in os.listdir(DOT_WORKFLOWS_DIR):
-            if fname.endswith(".yml"):
-                shutil.copy2(
-                    os.path.join(DOT_WORKFLOWS_DIR, fname),
-                    os.path.join(BACKUP_WORKFLOWS_DIR, fname),
-                )
 
     subprocess.run(
         ["git", "config", "--global", "--add", "safe.directory", ROOT_DIR],

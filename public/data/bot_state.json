@@ -22,7 +22,7 @@
     "telegramBotToken": "",
     "telegramChatId": "",
     "telegramSendShadow": false,
-    "autoSchedulerEnabled": true,
+    "autoSchedulerEnabled": false,
     "scanIntervalMinutes": 15,
     "lockedMonitorIntervalMinutes": 5,
     "autoSendTelegramOnScan": true,

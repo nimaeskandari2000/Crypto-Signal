@@ -200,14 +200,26 @@ export const DollarGoldMacroView: React.FC<DollarGoldMacroViewProps> = ({
       symbol: 'USDTIRT',
     });
     const msg = [
-      `🟢 خرید اسپات: USDT/IRT (تتر / تومان) | ${tetherSpotSignal.timeframe}`,
-      `💹 نرخ فعلی: ${tetherSpotSignal.currentIrt.toLocaleString('fa-IR')} تومان | وضعیت: ${tetherSpotSignal.entryVerdict}`,
-      `🎯 ورود: ${tetherSpotSignal.entryLowIrt.toLocaleString('fa-IR')} تا ${tetherSpotSignal.entryHighIrt.toLocaleString('fa-IR')} تومان | 🛑 حد ضرر: ${tetherSpotSignal.stopIrt.toLocaleString('fa-IR')} (${tetherSpotSignal.riskPct}%-)`,
-      `✅ تارگت ۱: ${tetherSpotSignal.tp1Irt.toLocaleString('fa-IR')} (+${tetherSpotSignal.netTp1Pct}%) | 🎯 تارگت ۲: ${tetherSpotSignal.tp2Irt.toLocaleString('fa-IR')} (+${tetherSpotSignal.netTp2Pct}%)`,
+      `🟢 سیگنال خرید اسپات | USDT/IRT (تتر / تومان)`,
+      `📌 تایم‌فریم: ${tetherSpotSignal.timeframe} • وضعیت: ${tetherSpotSignal.entryVerdict}`,
+      ``,
+      `💹 نرخ فعلی: ${tetherSpotSignal.currentIrt.toLocaleString('fa-IR')} تومان`,
+      `🎯 محدوده ورود: ${tetherSpotSignal.entryLowIrt.toLocaleString('fa-IR')} تا ${tetherSpotSignal.entryHighIrt.toLocaleString('fa-IR')} تومان`,
+      `🛑 حد ضرر: ${tetherSpotSignal.stopIrt.toLocaleString('fa-IR')} تومان (${tetherSpotSignal.riskPct}%-)`,
+      ``,
+      `✅ تارگت ۱: ${tetherSpotSignal.tp1Irt.toLocaleString('fa-IR')} تومان (+${tetherSpotSignal.netTp1Pct}%)`,
+      `🏆 تارگت ۲: ${tetherSpotSignal.tp2Irt.toLocaleString('fa-IR')} تومان (+${tetherSpotSignal.netTp2Pct}%)`,
+      ``,
       `⚖️ ریسک به ریوارد خالص: ${tetherSpotSignal.netRrTp1}R / ${tetherSpotSignal.netRrTp2}R`,
-      `🔗 لینک یکتای گیت‌هاب: ${dailyLink}`,
+      ``,
+      `🔗 لینک یکتای داشبورد گیت‌هاب:`,
+      `\u200E${dailyLink}`,
     ]
-      .map((line) => (line.trim().length > 0 ? `${RLM}${line}` : ''))
+      .map((line) => {
+        if (line.trim().length === 0) return '';
+        if (line.startsWith('\u200E')) return line;
+        return `${RLM}${line}`;
+      })
       .join('\n');
 
     await onSendTelegram(msg, 'سیگنال اسپات تتر (USDT/IRT)');

@@ -63,9 +63,9 @@ type ActiveTab =
   | 'performance'
   | 'settings';
 
-const LOCAL_STORAGE_SETTINGS_KEY = 'quantpulse_bot_settings_v4';
-const LOCAL_STORAGE_TRADES_KEY = 'quantpulse_executed_trades_v4';
-const LOCAL_STORAGE_REPORTS_KEY = 'quantpulse_daily_reports_v4';
+const LOCAL_STORAGE_SETTINGS_KEY = 'quantpulse_bot_settings_v5';
+const LOCAL_STORAGE_TRADES_KEY = 'quantpulse_executed_trades_v5';
+const LOCAL_STORAGE_REPORTS_KEY = 'quantpulse_daily_reports_v5';
 
 export default function App() {
   const [activeTab, setActiveTab] = useState<ActiveTab>('signals');
@@ -221,19 +221,31 @@ export default function App() {
       if (data.macro) setMacro(data.macro);
     };
 
+    const loadStaticState = async () => {
+      const bust = `t=${Date.now()}`;
+      for (const candidate of [`./data/bot_state.json?${bust}`, `./public/data/bot_state.json?${bust}`]) {
+        try {
+          const r = await fetch(candidate);
+          if (r.ok && r.headers.get('content-type')?.includes('application/json')) {
+            return await r.json();
+          }
+        } catch {
+          // try next candidate
+        }
+      }
+      return null;
+    };
+
     fetch('/api/state')
       .then((res) => {
         if (res.ok && res.headers.get('content-type')?.includes('application/json')) {
           return res.json();
         }
-        return fetch('./data/bot_state.json').then((r) => (r.ok ? r.json() : null));
+        return loadStaticState();
       })
       .then(applyLoadedData)
       .catch(() => {
-        fetch('./data/bot_state.json')
-          .then((r) => (r.ok ? r.json() : null))
-          .then(applyLoadedData)
-          .catch(() => {});
+        loadStaticState().then(applyLoadedData).catch(() => {});
       });
   }, []);
 

@@ -53,10 +53,17 @@ async function main() {
 
   const weeklyReport = [
     `\u200F🏆 گزارش هفتگی و کالیبراسیون | ${persianDate}`,
-    `\u200F📊 مدل‌های فعال: ${activeStrategies.length} استراتژی | بهترین: PAXG/USDT (\u200E+0.41R\u200F) و SMC Sweep (\u200E+0.36R\u200F)`,
-    `\u200F🛡 وضعیت Circuit Breaker: پایدار | علت اول ضرر: ${topLossReason.persianLabel} (\u200E${topLossReason.shareOfLossesPct}%\u200F)`,
-    `\u200F⚖️ قهرمان در برابر رقیب (${INITIAL_CHALLENGER.weeksRunning} هفته): \u200E+${INITIAL_CHALLENGER.championExpectancyR}R\u200F vs \u200E+${INITIAL_CHALLENGER.challengerExpectancyR}R\u200F`,
-    `\u200F🔗 لینک یکتای گیت‌هاب: ${dailyLink}`,
+    ``,
+    `\u200F📊 استراتژی‌های فعال: ${activeStrategies.length} مدل`,
+    `\u200F• بهترین بازده: PAXG/USDT (\u200E+0.41R\u200F)`,
+    `\u200F• رتبه دوم: SMC Sweep (\u200E+0.36R\u200F)`,
+    ``,
+    `\u200F🛡 وضعیت Circuit Breaker: پایدار`,
+    `\u200F• علت اصلی استاپ‌ها: ${topLossReason.persianLabel} (\u200E${topLossReason.shareOfLossesPct}%\u200F)`,
+    `\u200F⚖️ قهرمان در برابر رقیب (${INITIAL_CHALLENGER.weeksRunning} هفته): \u200E+${INITIAL_CHALLENGER.championExpectancyR}R\u200F در برابر \u200E+${INITIAL_CHALLENGER.challengerExpectancyR}R\u200F`,
+    ``,
+    `\u200F🔗 لینک یکتای داشبورد گیت‌هاب:`,
+    `\u200E${dailyLink}`,
   ].join('\n');
 
   console.log('\n' + weeklyReport + '\n');

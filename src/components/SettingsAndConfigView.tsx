@@ -442,7 +442,7 @@ iran:
                   id="cfg-dashboard-url"
                   type="url"
                   dir="ltr"
-                  placeholder="https://github.com/username/repo"
+                  placeholder="https://nimaeskandari2000.github.io/Crypto-Signal"
                   value={formState.dashboardUrl || ''}
                   onChange={(e) =>
                     setFormState({ ...formState, dashboardUrl: e.target.value })
@@ -706,11 +706,18 @@ iran:
                 });
                 const testMsg = [
                   `\u200F✅ تست اتصال ربات سیگنال‌دهی QuantPulse | ${todayFa}`,
-                  `\u200F🏛 منابع زنده: والکس، بیت‌پین، کراکن و فید سهام توکنیزه`,
-                  `\u200F⏱ سیکل اسکن: هر ${formState.scanIntervalMinutes} دقیقه | پایش قفل: هر ${formState.lockedMonitorIntervalMinutes} دقیقه`,
-                  `\u200F🔗 لینک یکتای گیت‌هاب: ${dailyLink}`,
+                  ``,
+                  `\u200F🏛 منابع زنده متصل:`,
+                  `\u200F• والکس، بیت‌پین، کراکن و فید سهام توکنیزه`,
+                  ``,
+                  `\u200F⏱ زمان‌بندی اسکن:`,
+                  `\u200F• اسکن بازار: هر ${formState.scanIntervalMinutes} دقیقه`,
+                  `\u200F• پایش قفل سیگنال: هر ${formState.lockedMonitorIntervalMinutes} دقیقه`,
+                  ``,
+                  `\u200F🔗 لینک یکتای داشبورد گیت‌هاب:`,
+                  `\u200E${dailyLink}`,
                 ].join('\n');
-                await onSendTelegram(testMsg, 'تست اتصال و لینک گیت‌هاب');
+                await onSendTelegram(testMsg, 'تست اتصال و لینک داشبورد گیت‌هاب');
               }}
               className="inline-flex items-center gap-2 px-4 py-2.5 text-xs font-medium bg-slate-100 dark:bg-slate-800 text-slate-900 dark:text-slate-100 rounded-lg hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors"
             >

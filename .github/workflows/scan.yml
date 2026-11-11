@@ -49,12 +49,21 @@ jobs:
           GITHUB_REPOSITORY: ${{ github.repository }}
         run: npm run scan
 
+      - name: Build static Management Console bundle for GitHub Pages
+        run: |
+          npm run build
+          mkdir -p public/bundle
+          cp dist/assets/*.js public/bundle/app.js
+          cp dist/assets/*.css public/bundle/app.css
+          touch .nojekyll public/.nojekyll
+
       - name: Commit updated state & journal back to repo
         run: |
           git config user.name "QuantPulse Bot"
           git config user.email "bot@quantpulse.local"
           rm -f package-lock.json
-          git add public/data/bot_state.json data/journal/ || true
+          rm -rf github-workflows .playwright-cli
+          git add -A .nojekyll public/.nojekyll public/bundle/ public/data/bot_state.json data/journal/ || true
           if ! git diff --cached --quiet; then
             git commit -m "chore(state): live market scan snapshot [skip ci]"
             git pull --rebase --autostash origin ${{ github.ref_name || 'main' }} || true

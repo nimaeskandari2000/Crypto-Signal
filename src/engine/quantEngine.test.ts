@@ -267,24 +267,26 @@ test('Live Market Recalibration, Signal Locking, High-Pump Radar, Forex Tokenize
   assert.equal(recalibratedEth.currentPrice, 2200);
   assert.ok(recalibratedEth.entryHigh < 2200 && recalibratedEth.entryLow > 2100);
 
-  // Verify working dashboard link replaces YOUR-USERNAME, quantpulse-bot, and .run.app placeholders with valid GitHub link
+  // Verify working dashboard link replaces YOUR-USERNAME, quantpulse-bot, and .run.app placeholders with valid GitHub Pages dashboard link
   const workingLink = resolveDailyDashboardLink('https://github.com/YOUR-USERNAME/quantpulse');
   assert.ok(!workingLink.includes('YOUR-USERNAME'), 'Should replace broken placeholder link');
   assert.ok(!workingLink.includes('quantpulse-bot'), 'Must never output 404 quantpulse-bot link');
-  assert.ok(workingLink.includes('github.com'), 'Should resolve to working GitHub domain');
+  assert.ok(workingLink.includes('github.io'), 'Should resolve to GitHub Pages dashboard domain');
   assert.ok(!workingLink.includes('.run.app'), 'Must never output .run.app link');
 
   // Verify Locked Signals Telegram Report when user explicitly locks a signal
-  const lockedReport = formatLockedSignalsTelegramReport([lockedPaxg]);
+  const lockedReport = formatLockedSignalsTelegramReport([lockedPaxg], 'https://ais-pre-6666.run.app');
   assert.ok(lockedReport.includes('پایش سیگنال‌های قفل‌شده'));
   assert.ok(lockedReport.includes('PAXG/USDT'));
+  assert.ok(lockedReport.includes('github.io'), 'Monitoring report must always use GitHub Pages dashboard link');
+  assert.ok(!lockedReport.includes('.run.app'), 'Monitoring report must never use non-GitHub .run.app link');
 
   // Verify SOL executed trade hitting TP1
   const solTrade = trades.find((t) => t.symbol === 'SOL/USDT')!;
   const evalResult = evaluateUserExecutedTrade(solTrade, 93.0, 265000);
   assert.equal(evalResult.updatedTrade.status, 'tp1_hit');
 
-  // Verify concise Telegram signal bulletin includes live price, entry, SL, TP, net R:R, zero Toman equivalents, and unique GitHub link
+  // Verify structured Telegram signal bulletin has dedicated lines per metric, blank line spacing, zero Toman equivalents, and unique GitHub Pages dashboard link
   const tgMsg = formatTelegramSignalMessage(signals[0], DEFAULT_BOT_SETTINGS);
   const tgMsg2 = formatTelegramSignalMessage(signals[1], DEFAULT_BOT_SETTINGS);
   assert.ok(tgMsg.startsWith('\u200F'));
@@ -292,16 +294,16 @@ test('Live Market Recalibration, Signal Locking, High-Pump Radar, Forex Tokenize
   assert.ok(tgMsg.includes('ورود:'));
   assert.ok(tgMsg.includes('حد ضرر:'));
   assert.ok(tgMsg.includes('تارگت ۱:'));
-  assert.ok(tgMsg.split('\n').length <= 10, 'Signal Telegram message must be concise (<= 10 lines)');
+  assert.ok(tgMsg.includes('\n\n'), 'Signal Telegram message must have clean blank-line section spacing');
   assert.ok(!tgMsg.includes('تومان'), 'Signal Telegram message must not contain Toman equivalents');
-  assert.ok(tgMsg.includes('لینک یکتای گیت‌هاب:'));
+  assert.ok(tgMsg.includes('لینک یکتای داشبورد گیت‌هاب:'));
 
-  // Verify every Telegram message gets a strictly unique GitHub deep-link URL
+  // Verify every Telegram message gets a strictly unique GitHub Pages dashboard deep-link URL
   const url1 = tgMsg.match(/https?:\/\/[^\s]+/)?.[0];
   const url2 = tgMsg2.match(/https?:\/\/[^\s]+/)?.[0];
   assert.ok(url1 && url2, 'Both Telegram messages must contain valid URLs');
   assert.notEqual(url1, url2, 'Each Telegram message must have a strictly unique link');
-  assert.ok(url1.includes('github.com'), 'Unique link must be a working GitHub link');
+  assert.ok(url1.includes('github.io'), 'Unique link must be a GitHub Pages dashboard link');
   assert.ok(!url1.includes('quantpulse-bot'), 'Unique link must never be a 404 quantpulse-bot link');
   assert.ok(!url1.includes('.run.app'), 'Unique link must never be a .run.app preview link');
   assert.ok(url1.includes('msg=QP-SIGNAL-'), 'Unique link must include msg=QP-SIGNAL- identifier');
@@ -312,17 +314,18 @@ test('Live Market Recalibration, Signal Locking, High-Pump Radar, Forex Tokenize
   assert.ok(htmlMsg.includes('<b>'));
   assert.ok(htmlMsg.includes('<a href="'));
 
-  // Verify automatic GitHub Repository URL resolution when running in GitHub Actions (GITHUB_REPOSITORY)
+  // Verify automatic GitHub Pages Dashboard URL resolution when running in GitHub Actions (GITHUB_REPOSITORY)
   const prevRepo = process.env.GITHUB_REPOSITORY;
   const prevAppUrl = process.env.APP_URL;
-  process.env.GITHUB_REPOSITORY = 'my-org/my-trading-repo';
+  process.env.GITHUB_REPOSITORY = 'nimaeskandari2000/Crypto-Signal';
   delete process.env.APP_URL;
-  const ghRepoLink = resolveDailyDashboardLink();
+  const ghDashboardLink = resolveDailyDashboardLink();
   assert.ok(
-    ghRepoLink.startsWith('https://github.com/my-org/my-trading-repo/?report='),
-    `Expected GitHub Repository URL, got ${ghRepoLink}`
+    ghDashboardLink.startsWith('https://nimaeskandari2000.github.io/Crypto-Signal/?report='),
+    `Expected GitHub Pages Dashboard URL, got ${ghDashboardLink}`
   );
   if (prevRepo !== undefined) process.env.GITHUB_REPOSITORY = prevRepo;
   else delete process.env.GITHUB_REPOSITORY;
   if (prevAppUrl !== undefined) process.env.APP_URL = prevAppUrl;
 });
+
