@@ -189,7 +189,25 @@ export default function App() {
         }));
       }
       if (data.dollarGold) setDollarGold(data.dollarGold);
-      if (data.signals) setSignals(data.signals);
+      if (data.signals && Array.isArray(data.signals)) {
+        setSignals(
+          data.signals.map((s: Signal) =>
+            s.isLocked && s.userLockedExplicitly
+              ? s
+              : {
+                  ...s,
+                  isLocked: false,
+                  userLockedExplicitly: false,
+                  lockedAt: undefined,
+                  lockedPriceAtLock: undefined,
+                  lockedEntryMid: undefined,
+                  lockedChangePct: undefined,
+                  lockedCurrentR: undefined,
+                  lockedMonitoringNote: undefined,
+                }
+          )
+        );
+      }
       if (data.executedTrades && data.executedTrades.length > 0) {
         setExecutedTrades(data.executedTrades);
       }
@@ -451,6 +469,7 @@ export default function App() {
           const updated: Signal = {
             ...sig,
             isLocked: nextLocked,
+            userLockedExplicitly: nextLocked,
             lockedAt: nextLocked ? new Date().toISOString() : undefined,
             lockedEntryMid: nextLocked ? sig.entryMid : undefined,
             lockedChangePct: nextLocked

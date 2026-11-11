@@ -42,7 +42,7 @@ export const DEFAULT_BOT_SETTINGS: BotSettings = {
   telegramBotToken: '',
   telegramChatId: '',
   telegramSendShadow: false,
-  autoSchedulerEnabled: true,
+  autoSchedulerEnabled: false,
   scanIntervalMinutes: 15, // Optimal 15-minute full scan
   lockedMonitorIntervalMinutes: 5, // Optimal 5-minute locked signals monitor
   autoSendTelegramOnScan: true,
@@ -389,7 +389,7 @@ export function buildInitialSignals(usdtIrt = 265000): Signal[] {
       regime: 'bull_low_vol',
       mode: 'live',
       status: 'open',
-      isLocked: true,
+      isLocked: false,
       liveSourceLabel: 'والکس + کراکن (زنده)',
       wallexDepthUsd: 88000,
       bitpinDepthUsd: 64000,
@@ -432,7 +432,7 @@ export function buildInitialSignals(usdtIrt = 265000): Signal[] {
       regime: 'bull_low_vol',
       mode: 'live',
       status: 'open',
-      isLocked: true,
+      isLocked: false,
       liveSourceLabel: 'والکس + کراکن (زنده)',
       wallexDepthUsd: 420000,
       bitpinDepthUsd: 380000,

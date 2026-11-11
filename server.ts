@@ -113,7 +113,21 @@ function loadPersistedState() {
         );
       }
       if (parsed.signalsList && Array.isArray(parsed.signalsList) && parsed.signalsList.length >= 15) {
-        signalsList = parsed.signalsList;
+        signalsList = parsed.signalsList.map((s: Signal) =>
+          s.isLocked && s.userLockedExplicitly
+            ? s
+            : {
+                ...s,
+                isLocked: false,
+                userLockedExplicitly: false,
+                lockedAt: undefined,
+                lockedPriceAtLock: undefined,
+                lockedEntryMid: undefined,
+                lockedChangePct: undefined,
+                lockedCurrentR: undefined,
+                lockedMonitoringNote: undefined,
+              }
+        );
       } else {
         signalsList = buildInitialSignals(dollarGoldSnapshot.usdtIrtAverage);
       }
@@ -132,15 +146,14 @@ function loadPersistedState() {
   }
 }
 
-const PUBLIC_STATE_FILE_PATH = path.join(__dirname, 'public', 'data', 'bot_state.json');
-
 function savePersistedState() {
   try {
     const dir = path.dirname(STATE_FILE_PATH);
     if (!fs.existsSync(dir)) {
       fs.mkdirSync(dir, { recursive: true });
     }
-    // Keep full botSettings in private local state file (excluded from git and zip)
+    // Keep runtime state strictly in private local state file (excluded from git)
+    // so AI Studio never modifies git-tracked public/data/bot_state.json
     fs.writeFileSync(
       STATE_FILE_PATH,
       JSON.stringify(
@@ -153,33 +166,6 @@ function savePersistedState() {
           strategiesList,
           challengerState,
           macroSummary,
-        },
-        null,
-        2
-      ),
-      'utf-8'
-    );
-
-    // Also keep public/data/bot_state.json synchronized (with token stripped for security)
-    const pubDir = path.dirname(PUBLIC_STATE_FILE_PATH);
-    if (!fs.existsSync(pubDir)) {
-      fs.mkdirSync(pubDir, { recursive: true });
-    }
-    fs.writeFileSync(
-      PUBLIC_STATE_FILE_PATH,
-      JSON.stringify(
-        {
-          settings: { ...botSettings, telegramBotToken: '' },
-          dollarGold: dollarGoldSnapshot,
-          signals: signalsList,
-          executedTrades: executedTradesList,
-          dailyReports: dailyReportsList,
-          strategies: strategiesList,
-          postmortem: INITIAL_POSTMORTEM_TAGS,
-          challenger: challengerState,
-          sourceHealth: sourceHealthList,
-          sentSignalIds: [],
-          macro: macroSummary,
         },
         null,
         2
@@ -710,70 +696,7 @@ function updateSourceStatus(
   );
 }
 
-// Multi-Tier Optimal Scheduler (checks every 60 seconds):
-// - Every 5 minutes (lockedMonitorIntervalMinutes): refreshes live prices for locked signals & alerts Telegram
-// - Every 15 minutes (scanIntervalMinutes): full market & high-pump scan
-// - Daily 08:00 Tehran (04:30 UTC): 3-horizon Dollar & Gold report + Win Rate scorecard
-setInterval(async () => {
-  if (!botSettings.autoSchedulerEnabled) return;
-  const now = new Date();
-  const lastScanMs = new Date(macroSummary.lastScanAt).getTime();
-  const lastLockedMs = new Date(macroSummary.lastLockedMonitorAt || macroSummary.lastScanAt).getTime();
-
-  const scanIntervalMs = Math.max(5, botSettings.scanIntervalMinutes || 15) * 60 * 1000;
-  const lockedIntervalMs = Math.max(2, botSettings.lockedMonitorIntervalMinutes || 5) * 60 * 1000;
-
-  if (Date.now() - lastScanMs >= scanIntervalMs) {
-    macroSummary.lastLockedMonitorAt = now.toISOString();
-    await refreshLiveMarketFeeds(true);
-  } else if (Date.now() - lastLockedMs >= lockedIntervalMs) {
-    const hasLocked = signalsList.some((s) => s.isLocked);
-    if (hasLocked) {
-      macroSummary.lastLockedMonitorAt = now.toISOString();
-      await refreshLiveMarketFeeds(true);
-    }
-  }
-
-  const utcDayKey = now.toISOString().slice(0, 10);
-  if (
-    now.getUTCHours() === 4 &&
-    now.getUTCMinutes() >= 30 &&
-    macroSummary.lastAutoDailyReportDate !== utcDayKey
-  ) {
-    macroSummary.lastAutoDailyReportDate = utcDayKey;
-    const winSummary = computeSignalWinRateMetrics(signalsList, executedTradesList);
-    const reportText = formatDailyTelegramReport({
-      dollarGold: dollarGoldSnapshot,
-      btcPrice: macroSummary.btcPrice,
-      btcChange24h: macroSummary.btcChange24h,
-      ethPrice: macroSummary.ethPrice,
-      ethChange24h: macroSummary.ethChange24h,
-      btcDominance: macroSummary.btcDominance,
-      fearGreedIndex: macroSummary.fearGreedIndex,
-      fearGreedLabel: macroSummary.fearGreedLabel,
-      activeSignalsCount: winSummary.activeSignals,
-      recent30WinRatePct: winSummary.winRatePct,
-      recent30NetR: winSummary.cumulativeNetR,
-      settings: botSettings,
-    });
-    await dispatchTelegramMessage(reportText);
-
-    if (dailyReportsList[0]) {
-      const perfText = formatDailyPerformanceTelegramReport(
-        dailyReportsList[0],
-        winSummary,
-        botSettings.dashboardUrl
-      );
-      await dispatchTelegramMessage(perfText);
-    }
-    savePersistedState();
-  }
-}, 60 * 1000);
-
 async function startServer() {
-  // Perform immediate live market sync on server boot so prices are 100% live from second zero
-  await refreshLiveMarketFeeds(false);
-
   const app = express();
   app.use(express.json());
 
@@ -810,6 +733,7 @@ async function startServer() {
         return {
           ...sig,
           isLocked: false,
+          userLockedExplicitly: false,
           lockedAt: undefined,
           lockedEntryMid: undefined,
           lockedChangePct: undefined,
@@ -825,6 +749,7 @@ async function startServer() {
       return {
         ...sig,
         isLocked: true,
+        userLockedExplicitly: true,
         lockedAt: new Date().toISOString(),
         lockedEntryMid: sig.entryMid,
         lockedChangePct: changePct,

@@ -442,7 +442,7 @@ iran:
                   id="cfg-dashboard-url"
                   type="url"
                   dir="ltr"
-                  placeholder="https://nimaeskandari.github.io/quantpulse-bot"
+                  placeholder="https://github.com/username/repo"
                   value={formState.dashboardUrl || ''}
                   onChange={(e) =>
                     setFormState({ ...formState, dashboardUrl: e.target.value })

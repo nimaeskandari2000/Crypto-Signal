@@ -131,6 +131,7 @@ export interface Signal {
   maeR?: number;
   // Signal Locking & Continuous Monitoring fields
   isLocked?: boolean;
+  userLockedExplicitly?: boolean;
   lockedAt?: string;
   lockedPriceAtLock?: number;
   lockedEntryMid?: number;

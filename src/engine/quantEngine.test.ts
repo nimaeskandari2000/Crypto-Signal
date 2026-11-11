@@ -238,9 +238,21 @@ test('Live Market Recalibration, Signal Locking, High-Pump Radar, Forex Tokenize
   assert.ok(radarMsg.includes('رادار اسکن QuantPulse'));
   assert.ok(radarMsg.includes('74,500'));
 
-  // Verify Signal Locking freezes entry/SL/TP while updating live progress
-  const lockedPaxg = signals.find((s) => s.symbol === 'PAXG/USDT')!;
-  assert.equal(lockedPaxg.isLocked, true);
+  // Verify NO signal is automatically locked by default
+  assert.ok(
+    signals.every((s) => !s.isLocked),
+    'No signal should be automatically locked by default'
+  );
+
+  // Verify explicit user Signal Locking freezes entry/SL/TP while updating live progress
+  const paxgBase = signals.find((s) => s.symbol === 'PAXG/USDT')!;
+  const lockedPaxg = {
+    ...paxgBase,
+    isLocked: true,
+    userLockedExplicitly: true,
+    lockedAt: new Date().toISOString(),
+    lockedEntryMid: paxgBase.entryMid,
+  };
   const origEntryMid = lockedPaxg.entryMid;
   const origStop = lockedPaxg.stop;
   const updatedLocked = recalibrateSignalWithLiveMarket(lockedPaxg, 4215.0, 265000);
@@ -255,15 +267,15 @@ test('Live Market Recalibration, Signal Locking, High-Pump Radar, Forex Tokenize
   assert.equal(recalibratedEth.currentPrice, 2200);
   assert.ok(recalibratedEth.entryHigh < 2200 && recalibratedEth.entryLow > 2100);
 
-  // Verify working dashboard link replaces YOUR-USERNAME and .run.app placeholders with GitHub link
+  // Verify working dashboard link replaces YOUR-USERNAME, quantpulse-bot, and .run.app placeholders with valid GitHub link
   const workingLink = resolveDailyDashboardLink('https://github.com/YOUR-USERNAME/quantpulse');
   assert.ok(!workingLink.includes('YOUR-USERNAME'), 'Should replace broken placeholder link');
-  assert.ok(workingLink.includes('github.io'), 'Should resolve to GitHub Pages domain');
+  assert.ok(!workingLink.includes('quantpulse-bot'), 'Must never output 404 quantpulse-bot link');
+  assert.ok(workingLink.includes('github.com'), 'Should resolve to working GitHub domain');
   assert.ok(!workingLink.includes('.run.app'), 'Must never output .run.app link');
 
-  // Verify Locked Signals Telegram Report
-  const lockedList = signals.filter((s) => s.isLocked);
-  const lockedReport = formatLockedSignalsTelegramReport(lockedList);
+  // Verify Locked Signals Telegram Report when user explicitly locks a signal
+  const lockedReport = formatLockedSignalsTelegramReport([lockedPaxg]);
   assert.ok(lockedReport.includes('پایش سیگنال‌های قفل‌شده'));
   assert.ok(lockedReport.includes('PAXG/USDT'));
 
@@ -289,7 +301,8 @@ test('Live Market Recalibration, Signal Locking, High-Pump Radar, Forex Tokenize
   const url2 = tgMsg2.match(/https?:\/\/[^\s]+/)?.[0];
   assert.ok(url1 && url2, 'Both Telegram messages must contain valid URLs');
   assert.notEqual(url1, url2, 'Each Telegram message must have a strictly unique link');
-  assert.ok(url1.includes('github.io'), 'Unique link must be a GitHub link');
+  assert.ok(url1.includes('github.com'), 'Unique link must be a working GitHub link');
+  assert.ok(!url1.includes('quantpulse-bot'), 'Unique link must never be a 404 quantpulse-bot link');
   assert.ok(!url1.includes('.run.app'), 'Unique link must never be a .run.app preview link');
   assert.ok(url1.includes('msg=QP-SIGNAL-'), 'Unique link must include msg=QP-SIGNAL- identifier');
   assert.ok(url1.includes(`signal=${signals[0].id}`), 'Unique link must deep-link to the signal ID');
@@ -299,18 +312,17 @@ test('Live Market Recalibration, Signal Locking, High-Pump Radar, Forex Tokenize
   assert.ok(htmlMsg.includes('<b>'));
   assert.ok(htmlMsg.includes('<a href="'));
 
-  // Verify automatic GitHub Pages URL resolution when running in GitHub Actions (GITHUB_REPOSITORY)
+  // Verify automatic GitHub Repository URL resolution when running in GitHub Actions (GITHUB_REPOSITORY)
   const prevRepo = process.env.GITHUB_REPOSITORY;
   const prevAppUrl = process.env.APP_URL;
-  process.env.GITHUB_REPOSITORY = 'NimaEskandari/quantpulse-bot';
+  process.env.GITHUB_REPOSITORY = 'my-org/my-trading-repo';
   delete process.env.APP_URL;
-  const ghPagesLink = resolveDailyDashboardLink();
+  const ghRepoLink = resolveDailyDashboardLink();
   assert.ok(
-    ghPagesLink.startsWith('https://nimaeskandari.github.io/quantpulse-bot/?report='),
-    `Expected GitHub Pages URL, got ${ghPagesLink}`
+    ghRepoLink.startsWith('https://github.com/my-org/my-trading-repo/?report='),
+    `Expected GitHub Repository URL, got ${ghRepoLink}`
   );
   if (prevRepo !== undefined) process.env.GITHUB_REPOSITORY = prevRepo;
   else delete process.env.GITHUB_REPOSITORY;
   if (prevAppUrl !== undefined) process.env.APP_URL = prevAppUrl;
 });
-

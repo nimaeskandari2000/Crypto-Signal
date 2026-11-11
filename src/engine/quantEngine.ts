@@ -15,8 +15,7 @@ import {
 } from './types';
 
 const RLM = '\u200F'; // Right-to-Left Mark for clean Telegram BiDi rendering
-export const FALLBACK_LIVE_APP_URL =
-  'https://nimaeskandari.github.io/quantpulse-bot';
+export const FALLBACK_LIVE_APP_URL = 'https://github.com';
 
 function applyRtlLines(lines: string[]): string {
   return lines.map((line) => (line.trim().length > 0 ? `${RLM}${line}` : '')).join('\n');
@@ -108,14 +107,15 @@ export function sanitizeTelegramChatId(rawChatId?: string): string {
 
 export function isPlaceholderUrl(url?: string): boolean {
   if (!url || !url.trim()) return true;
-  const lower = url.toLowerCase();
+  const lower = url.toLowerCase().trim().replace(/\/+$/, '');
   return (
     lower.includes('your-username') ||
     lower.includes('your-repo') ||
-    lower.includes('quantpulse-bot/quantpulse') ||
+    lower.includes('quantpulse-bot') ||
     lower.includes('.run.app') ||
     lower.includes('localhost') ||
-    lower.includes('127.0.0.1')
+    lower.includes('127.0.0.1') ||
+    lower === 'https://github.com'
   );
 }
 
@@ -131,21 +131,15 @@ export interface TelegramLinkContext {
 }
 
 export function resolveBaseDashboardUrl(dashboardUrl?: string): string {
-  // 1. If running in GitHub Actions (GITHUB_REPOSITORY is set) and no custom GitHub URL override is provided,
-  // automatically resolve to the user's GitHub Pages URL (`https://<owner>.github.io/<repo>`)
-  if (
-    typeof process !== 'undefined' &&
-    process.env?.GITHUB_REPOSITORY &&
-    (!process.env?.APP_URL || isPlaceholderUrl(process.env.APP_URL)) &&
-    (!dashboardUrl || isPlaceholderUrl(dashboardUrl) || dashboardUrl === FALLBACK_LIVE_APP_URL)
-  ) {
+  // 1. If running in GitHub Actions (GITHUB_REPOSITORY is set), resolve directly to the user's real GitHub repository URL (`https://github.com/<owner>/<repo>`) so it never returns 404
+  if (typeof process !== 'undefined' && process.env?.GITHUB_REPOSITORY) {
     const [owner, repo] = process.env.GITHUB_REPOSITORY.split('/');
     if (owner && repo && owner !== 'YOUR-USERNAME') {
-      return `https://${owner.toLowerCase()}.github.io/${repo}`;
+      return `https://github.com/${owner}/${repo}`;
     }
   }
 
-  // 2. Explicit custom GitHub URL
+  // 2. Explicit custom URL configured by the user (if not a placeholder or .run.app URL)
   if (dashboardUrl && !isPlaceholderUrl(dashboardUrl)) {
     return dashboardUrl.trim().split('?')[0].replace(/\/+$/, '');
   }

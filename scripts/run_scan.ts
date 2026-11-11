@@ -356,7 +356,7 @@ async function main() {
   const dollarGold = buildInitialDollarGoldSnapshot(usdtIrtWallex, usdtIrtBitpin, xauUsdOunce);
   const baseSignals = buildInitialSignals(dollarGold.usdtIrtAverage);
 
-  // Preserve lock status from existing state if present
+  // Preserve lock status ONLY if explicitly locked by user (never auto-lock or carry over legacy demo locks)
   const existingSignalsMap = new Map<string, Signal>();
   if (Array.isArray(existingState?.signals)) {
     for (const s of existingState.signals) {
@@ -366,15 +366,29 @@ async function main() {
 
   const signals = baseSignals.map((sig) => {
     const prev = existingSignalsMap.get(sig.id);
-    const mergedSig: Signal = prev
+    const isUserLocked =
+      Boolean(prev?.isLocked) &&
+      Boolean(prev?.userLockedExplicitly);
+    const mergedSig: Signal = isUserLocked && prev
       ? {
           ...sig,
-          isLocked: prev.isLocked ?? sig.isLocked,
-          lockedAt: prev.lockedAt ?? sig.lockedAt,
-          lockedPriceAtLock: prev.lockedPriceAtLock ?? sig.lockedPriceAtLock,
-          lockedEntryMid: prev.lockedEntryMid ?? sig.lockedEntryMid,
+          isLocked: true,
+          userLockedExplicitly: true,
+          lockedAt: prev.lockedAt,
+          lockedPriceAtLock: prev.lockedPriceAtLock ?? sig.entryMid,
+          lockedEntryMid: prev.lockedEntryMid ?? sig.entryMid,
         }
-      : sig;
+      : {
+          ...sig,
+          isLocked: false,
+          userLockedExplicitly: false,
+          lockedAt: undefined,
+          lockedPriceAtLock: undefined,
+          lockedEntryMid: undefined,
+          lockedChangePct: undefined,
+          lockedCurrentR: undefined,
+          lockedMonitoringNote: undefined,
+        };
     const liveP = livePricesUsdt[mergedSig.baseAsset] ?? mergedSig.currentPrice;
     return recalibrateSignalWithLiveMarket(mergedSig, liveP, dollarGold.usdtIrtAverage);
   });

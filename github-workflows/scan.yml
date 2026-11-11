@@ -60,27 +60,3 @@ jobs:
             git pull --rebase --autostash origin ${{ github.ref_name || 'main' }} || true
             git push origin HEAD:${{ github.ref_name || 'main' }} || git push || true
           fi
-
-      - name: Build static Management Console for GitHub Pages
-        run: npm run build
-        continue-on-error: true
-
-      - name: Configure GitHub Pages
-        id: pages_config
-        uses: actions/configure-pages@v5
-        with:
-          enablement: true
-        continue-on-error: true
-
-      - name: Upload Pages artifact
-        if: steps.pages_config.outcome == 'success'
-        uses: actions/upload-pages-artifact@v3
-        with:
-          path: ./dist
-        continue-on-error: true
-
-      - name: Deploy to GitHub Pages
-        if: steps.pages_config.outcome == 'success'
-        id: deployment
-        uses: actions/deploy-pages@v4
-        continue-on-error: true
