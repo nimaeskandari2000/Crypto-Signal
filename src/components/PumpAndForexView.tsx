@@ -36,17 +36,30 @@ export const PumpAndForexView: React.FC<PumpAndForexViewProps> = ({
   telegramFeedback,
 }) => {
   const [activeSubView, setActiveSubView] = useState<'both' | 'pump' | 'forex'>('both');
+  const [timeframeFilter, setTimeframeFilter] = useState<'all' | Signal['timeframe']>('all');
   const [lockingId, setLockingId] = useState<string | null>(null);
   const [sendingBatch, setSendingBatch] = useState<'pump' | 'forex' | null>(null);
 
   const pumpSignals = useMemo(
-    () => signals.filter((s) => s.category === 'high_pump'),
-    [signals]
+    () =>
+      signals
+        .filter(
+          (s) =>
+            s.category === 'high_pump' &&
+            (timeframeFilter === 'all' || s.timeframe === timeframeFilter)
+        )
+        .sort((a, b) => (b.change24hPct ?? 0) - (a.change24hPct ?? 0)),
+    [signals, timeframeFilter]
   );
 
   const forexTokenizedSignals = useMemo(
-    () => signals.filter((s) => s.category === 'forex_tokenized'),
-    [signals]
+    () =>
+      signals.filter(
+        (s) =>
+          s.category === 'forex_tokenized' &&
+          (timeframeFilter === 'all' || s.timeframe === timeframeFilter)
+      ),
+    [signals, timeframeFilter]
   );
 
   const handleLockClick = async (sigId: string) => {
@@ -93,47 +106,74 @@ export const PumpAndForexView: React.FC<PumpAndForexViewProps> = ({
       <section className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg p-5 flex flex-wrap items-center justify-between gap-4">
         <div>
           <h1 className="text-base font-bold text-slate-900 dark:text-slate-100">
-            رادار شکارچی پامپ (سودهای انفجاری) + بازار فارکس، سهام و کامودیتی‌های توکنیزه‌شده
+            رادار شکارچی پامپ و پیشتازان بازدهی ۲۴ ساعته + بازار فارکس و دارایی‌های توکنیزه
           </h1>
           <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
-            تمامی قیمت‌ها به صورت زنده از وب‌سرویس والکس (۱۸۶ جفت‌ارز)، کراکن فارکس و یاهو فایننس همگام‌سازی می‌شوند. می‌توانید هر سیگنال را قفل کنید تا هر ۵ دقیقه پایش شود.
+            اسکن خودکار پربازده‌ترین ارزهای ۲۴ ساعت اخیر در والکس و بازارهای جهانی در ۴ افق زمانی (۱ ساعته، ۴ ساعته، روزانه و هفتگی).
           </p>
         </div>
 
-        <div className="flex items-center gap-1.5 p-1 bg-slate-100 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-lg">
-          <button
-            type="button"
-            onClick={() => setActiveSubView('both')}
-            className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors ${
-              activeSubView === 'both'
-                ? 'bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 shadow-xs'
-                : 'text-slate-600 dark:text-slate-400'
-            }`}
-          >
-            نمایش هر دو بخش ({pumpSignals.length + forexTokenizedSignals.length})
-          </button>
-          <button
-            type="button"
-            onClick={() => setActiveSubView('pump')}
-            className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors ${
-              activeSubView === 'pump'
-                ? 'bg-white dark:bg-slate-800 text-emerald-600 dark:text-emerald-400 shadow-xs'
-                : 'text-slate-600 dark:text-slate-400'
-            }`}
-          >
-            🚀 شکارچی پامپ ({pumpSignals.length})
-          </button>
-          <button
-            type="button"
-            onClick={() => setActiveSubView('forex')}
-            className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors ${
-              activeSubView === 'forex'
-                ? 'bg-white dark:bg-slate-800 text-emerald-600 dark:text-emerald-400 shadow-xs'
-                : 'text-slate-600 dark:text-slate-400'
-            }`}
-          >
-            🌍 فارکس و دارایی توکنیزه ({forexTokenizedSignals.length})
-          </button>
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="flex items-center gap-1 p-1 bg-slate-100 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-lg" role="group" aria-label="فیلتر تایم‌فریم رادار پامپ">
+            {(['all', '1h', '4h', '1d', '1w'] as const).map((tf) => (
+              <button
+                key={tf}
+                type="button"
+                onClick={() => setTimeframeFilter(tf)}
+                className={`px-2.5 py-1.5 text-xs font-medium rounded-md transition-colors ${
+                  timeframeFilter === tf
+                    ? 'bg-white dark:bg-slate-800 text-emerald-600 dark:text-emerald-400 shadow-xs'
+                    : 'text-slate-600 dark:text-slate-400'
+                }`}
+              >
+                {tf === 'all'
+                  ? 'همه تایم‌فریم‌ها'
+                  : tf === '1h'
+                    ? '1H'
+                    : tf === '4h'
+                      ? '4H'
+                      : tf === '1d'
+                        ? 'روزانه (1D)'
+                        : 'هفتگی (1W)'}
+              </button>
+            ))}
+          </div>
+
+          <div className="flex items-center gap-1.5 p-1 bg-slate-100 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-lg">
+            <button
+              type="button"
+              onClick={() => setActiveSubView('both')}
+              className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors ${
+                activeSubView === 'both'
+                  ? 'bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 shadow-xs'
+                  : 'text-slate-600 dark:text-slate-400'
+              }`}
+            >
+              نمایش هر دو بخش ({pumpSignals.length + forexTokenizedSignals.length})
+            </button>
+            <button
+              type="button"
+              onClick={() => setActiveSubView('pump')}
+              className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors ${
+                activeSubView === 'pump'
+                  ? 'bg-white dark:bg-slate-800 text-emerald-600 dark:text-emerald-400 shadow-xs'
+                  : 'text-slate-600 dark:text-slate-400'
+              }`}
+            >
+              🚀 شکارچی پامپ و ۲۴h ({pumpSignals.length})
+            </button>
+            <button
+              type="button"
+              onClick={() => setActiveSubView('forex')}
+              className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors ${
+                activeSubView === 'forex'
+                  ? 'bg-white dark:bg-slate-800 text-emerald-600 dark:text-emerald-400 shadow-xs'
+                  : 'text-slate-600 dark:text-slate-400'
+              }`}
+            >
+              🌍 فارکس و دارایی توکنیزه ({forexTokenizedSignals.length})
+            </button>
+          </div>
         </div>
       </section>
 

@@ -1,6 +1,7 @@
 export type MarketType = 'spot_ir' | 'perp_global';
 export type SignalSide = 'long' | 'short';
 export type SignalMode = 'live' | 'shadow';
+export type SignalTimeframe = '1h' | '4h' | '1d' | '1w';
 export type AssetCategory =
   | 'core_crypto'
   | 'gold_dollar'
@@ -94,7 +95,7 @@ export interface Signal {
   strategy: StrategyId;
   strategyLabel: string;
   strategyVersion: string;
-  timeframe: '1h' | '4h';
+  timeframe: SignalTimeframe;
   timeHorizonFa: string; // e.g. "کوتاه‌مدت (۱۲ تا ۳۶ ساعت)" or "میان‌مدت (۱ تا ۳ روز)"
   expectedHoldHours: string;
   entryLow: number;
@@ -102,6 +103,7 @@ export interface Signal {
   entryMid: number; // Two-tranche blended fill price
   currentPrice: number;
   change24hPct?: number;
+  isTop24hGainer?: boolean;
   stop: number;
   stopDistancePct: number;
   tp1: number;
@@ -166,7 +168,7 @@ export interface UserExecutedTrade {
   baseAsset: string;
   persianName: string;
   strategyLabel: string;
-  timeframe: '1h' | '4h';
+  timeframe: SignalTimeframe;
   timeHorizonFa: string;
   exchange: 'wallex' | 'bitpin';
   enteredAt: string; // ISO
@@ -332,7 +334,7 @@ export interface StrategyValidationMetrics {
   autoDemotedByCircuitBreaker: boolean;
   demotionReason?: string;
   markets: MarketType[];
-  timeframes: ('1h' | '4h')[];
+  timeframes: SignalTimeframe[];
   allowedRegimes: MarketRegime[];
   params: {
     swingLength: number;

@@ -30,9 +30,11 @@ import {
   UserExecutedTrade,
 } from './engine/types';
 import {
+  LiveGainerCandidate,
   calculatePositionSizing,
   computeOrthogonalScore,
   computeSignalWinRateMetrics,
+  discoverDynamicTopGainerSignals,
   evaluateCircuitBreaker,
   evaluateUserExecutedTrade,
   formatDailyPerformanceTelegramReport,
@@ -63,9 +65,9 @@ type ActiveTab =
   | 'performance'
   | 'settings';
 
-const LOCAL_STORAGE_SETTINGS_KEY = 'quantpulse_bot_settings_v5';
-const LOCAL_STORAGE_TRADES_KEY = 'quantpulse_executed_trades_v5';
-const LOCAL_STORAGE_REPORTS_KEY = 'quantpulse_daily_reports_v5';
+const LOCAL_STORAGE_SETTINGS_KEY = 'quantpulse_bot_settings_v6';
+const LOCAL_STORAGE_TRADES_KEY = 'quantpulse_executed_trades_v6';
+const LOCAL_STORAGE_REPORTS_KEY = 'quantpulse_daily_reports_v6';
 
 export default function App() {
   const [activeTab, setActiveTab] = useState<ActiveTab>('signals');
@@ -824,6 +826,7 @@ export default function App() {
       let nextBtc = macro.btcPrice;
       let nextEth = macro.ethPrice;
       const liveAssetPrices: Record<string, number> = {};
+      const liveGainerCandidates: LiveGainerCandidate[] = [];
 
       // 1. Try Kraken Public API (CORS-enabled in browsers worldwide)
       try {
@@ -880,20 +883,78 @@ export default function App() {
         // ignore
       }
 
-      // 2. Try Wallex Public API if reachable from user's browser
-      if (!customUsdtIrt || customUsdtIrt <= 30000) {
-        try {
-          const wxRes = await fetch('https://api.wallex.ir/v1/markets');
-          if (wxRes.ok) {
-            const wxJson = (await wxRes.json()) as any;
-            const lastTmn = Number(wxJson?.result?.symbols?.USDTTMN?.stats?.lastPrice);
-            if (lastTmn >= 50000 && lastTmn <= 1000000) {
-              nextWallex = Math.round(lastTmn);
+      // 2. Try Wallex Public API if reachable from user's browser (including 24h top gainers)
+      try {
+        const wxRes = await fetch('https://api.wallex.ir/v1/markets');
+        if (wxRes.ok) {
+          const wxJson = (await wxRes.json()) as any;
+          const symbols = wxJson?.result?.symbols || {};
+          const lastTmn = Number(symbols?.USDTTMN?.stats?.lastPrice);
+          if (
+            (!customUsdtIrt || customUsdtIrt <= 30000) &&
+            lastTmn >= 50000 &&
+            lastTmn <= 1000000
+          ) {
+            nextWallex = Math.round(lastTmn);
+          }
+          for (const [pairKey, info] of Object.entries(symbols) as Array<[string, any]>) {
+            const stats = info?.stats;
+            if (!stats) continue;
+            const lastP = Number(stats.lastPrice);
+            const ch24 = Number(stats['24h_ch'] ?? 0);
+            const vol24 = Number(stats['24h_tmnVolume'] ?? stats['24h_quoteVolume'] ?? 0);
+            if (!Number.isFinite(lastP) || lastP <= 0) continue;
+            if (pairKey.endsWith('USDT')) {
+              const base = pairKey.slice(0, -4);
+              liveAssetPrices[base] = lastP;
+              if (ch24 >= 4.0) {
+                liveGainerCandidates.push({
+                  baseAsset: base,
+                  persianName: info?.faBaseAsset || base,
+                  priceUsdt: lastP,
+                  change24hPct: ch24,
+                  volume24hUsdt: vol24 > 0 ? vol24 : 500000,
+                  sourceExchange: 'wallex',
+                });
+              }
             }
           }
-        } catch {
-          // ignore
         }
+      } catch {
+        // ignore
+      }
+
+      // 3. Try CoinGecko Public API for Global 24h Top Gainers
+      try {
+        const cgRes = await fetch(
+          'https://api.coingecko.com/api/v3/coins/markets?vs_currency=usd&order=volume_desc&per_page=60&page=1&sparkline=false&price_change_percentage=24h'
+        );
+        if (cgRes.ok) {
+          const cgData = (await cgRes.json()) as any[];
+          if (Array.isArray(cgData)) {
+            for (const coin of cgData) {
+              const sym = String(coin?.symbol || '').toUpperCase();
+              const price = Number(coin?.current_price);
+              const ch24 = Number(coin?.price_change_percentage_24h ?? 0);
+              const vol = Number(coin?.total_volume ?? 0);
+              if (!sym || !Number.isFinite(price) || price <= 0) continue;
+              if (['USDT', 'USDC', 'DAI', 'FDUSD', 'USDE', 'TUSD'].includes(sym)) continue;
+              if (!liveAssetPrices[sym]) liveAssetPrices[sym] = price;
+              if (ch24 >= 5.0 && !liveGainerCandidates.some((c) => c.baseAsset === sym)) {
+                liveGainerCandidates.push({
+                  baseAsset: sym,
+                  persianName: coin?.name || sym,
+                  priceUsdt: price,
+                  change24hPct: Number(ch24.toFixed(2)),
+                  volume24hUsdt: vol,
+                  sourceExchange: 'global',
+                });
+              }
+            }
+          }
+        }
+      } catch {
+        // ignore
       }
 
       const updatedDg = buildInitialDollarGoldSnapshot(
@@ -903,10 +964,17 @@ export default function App() {
       );
       setDollarGold(updatedDg);
 
-      const updatedSignals = signals.map((sig) => {
+      let updatedSignals = signals.map((sig) => {
         const liveP = liveAssetPrices[sig.baseAsset] ?? sig.currentPrice;
         return recalibrateSignalWithLiveMarket(sig, liveP, updatedDg.usdtIrtAverage);
       });
+      if (liveGainerCandidates.length > 0) {
+        updatedSignals = discoverDynamicTopGainerSignals(
+          liveGainerCandidates,
+          updatedSignals,
+          updatedDg.usdtIrtAverage
+        );
+      }
       setSignals(updatedSignals);
 
       setMacro((prev) => ({

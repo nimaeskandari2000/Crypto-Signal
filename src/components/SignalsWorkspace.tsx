@@ -77,6 +77,8 @@ export const SignalsWorkspace: React.FC<SignalsWorkspaceProps> = ({
     initialSelectedSignalId || signals[0]?.id || ''
   );
   const [categoryFilter, setCategoryFilter] = useState<'all' | AssetCategory>('all');
+  const [timeframeFilter, setTimeframeFilter] = useState<'all' | Signal['timeframe']>('all');
+  const [onlyTop24hGainers, setOnlyTop24hGainers] = useState<boolean>(false);
   const [statusFilter, setStatusFilter] = useState<'all' | 'active' | 'locked' | 'closed'>(
     initialStatusFilter || 'all'
   );
@@ -109,8 +111,10 @@ export const SignalsWorkspace: React.FC<SignalsWorkspaceProps> = ({
   );
 
   const filteredSignals = useMemo(() => {
-    return signals.filter((sig) => {
+    const list = signals.filter((sig) => {
       if (categoryFilter !== 'all' && sig.category !== categoryFilter) return false;
+      if (timeframeFilter !== 'all' && sig.timeframe !== timeframeFilter) return false;
+      if (onlyTop24hGainers && (sig.change24hPct ?? 0) < 3.0) return false;
       if (statusFilter === 'active') {
         if (!['pending', 'open', 'tp1'].includes(sig.status)) return false;
       } else if (statusFilter === 'locked') {
@@ -127,7 +131,12 @@ export const SignalsWorkspace: React.FC<SignalsWorkspaceProps> = ({
       }
       return true;
     });
-  }, [signals, categoryFilter, statusFilter, searchQuery]);
+
+    if (onlyTop24hGainers) {
+      return [...list].sort((a, b) => (b.change24hPct ?? 0) - (a.change24hPct ?? 0));
+    }
+    return list;
+  }, [signals, categoryFilter, timeframeFilter, onlyTop24hGainers, statusFilter, searchQuery]);
 
   const selectedSignal = useMemo(() => {
     return (
@@ -430,6 +439,78 @@ export const SignalsWorkspace: React.FC<SignalsWorkspaceProps> = ({
               🥇 طلا و دلار ({signals.filter((s) => s.category === 'gold_dollar').length})
             </button>
           </div>
+
+          {/* Timeframe / Horizon Filter (1H, 4H, 1D Daily, 1W Weekly) */}
+          <div className="flex flex-wrap items-center gap-1 p-1 bg-slate-100 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg" role="group" aria-label="فیلتر تایم‌فریم و افق زمانی">
+            <button
+              type="button"
+              onClick={() => setTimeframeFilter('all')}
+              className={`px-2.5 py-1.5 text-xs font-medium rounded-md transition-colors whitespace-nowrap shrink-0 ${
+                timeframeFilter === 'all'
+                  ? 'bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 shadow-xs'
+                  : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
+              }`}
+            >
+              همه افق‌ها
+            </button>
+            <button
+              type="button"
+              onClick={() => setTimeframeFilter('1h')}
+              className={`px-2.5 py-1.5 text-xs font-medium rounded-md transition-colors whitespace-nowrap shrink-0 ${
+                timeframeFilter === '1h'
+                  ? 'bg-white dark:bg-slate-800 text-emerald-600 dark:text-emerald-400 shadow-xs'
+                  : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
+              }`}
+            >
+              ۱ ساعته (1H · {signals.filter((s) => s.timeframe === '1h').length})
+            </button>
+            <button
+              type="button"
+              onClick={() => setTimeframeFilter('4h')}
+              className={`px-2.5 py-1.5 text-xs font-medium rounded-md transition-colors whitespace-nowrap shrink-0 ${
+                timeframeFilter === '4h'
+                  ? 'bg-white dark:bg-slate-800 text-emerald-600 dark:text-emerald-400 shadow-xs'
+                  : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
+              }`}
+            >
+              ۴ ساعته (4H · {signals.filter((s) => s.timeframe === '4h').length})
+            </button>
+            <button
+              type="button"
+              onClick={() => setTimeframeFilter('1d')}
+              className={`px-2.5 py-1.5 text-xs font-medium rounded-md transition-colors whitespace-nowrap shrink-0 ${
+                timeframeFilter === '1d'
+                  ? 'bg-white dark:bg-slate-800 text-emerald-600 dark:text-emerald-400 shadow-xs'
+                  : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
+              }`}
+            >
+              روزانه (1D · {signals.filter((s) => s.timeframe === '1d').length})
+            </button>
+            <button
+              type="button"
+              onClick={() => setTimeframeFilter('1w')}
+              className={`px-2.5 py-1.5 text-xs font-medium rounded-md transition-colors whitespace-nowrap shrink-0 ${
+                timeframeFilter === '1w'
+                  ? 'bg-white dark:bg-slate-800 text-emerald-600 dark:text-emerald-400 shadow-xs'
+                  : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
+              }`}
+            >
+              هفتگی (1W · {signals.filter((s) => s.timeframe === '1w').length})
+            </button>
+          </div>
+
+          {/* 24h Top Gainers Toggle */}
+          <button
+            type="button"
+            onClick={() => setOnlyTop24hGainers((prev) => !prev)}
+            className={`px-3 py-2 text-xs font-semibold rounded-lg border transition-colors whitespace-nowrap shrink-0 ${
+              onlyTop24hGainers
+                ? 'bg-amber-500 text-white border-amber-500 shadow-xs'
+                : 'bg-white dark:bg-slate-900 text-amber-700 dark:text-amber-400 border-amber-300 dark:border-amber-800 hover:bg-amber-50 dark:hover:bg-amber-950/30'
+            }`}
+          >
+            🔥 پیشتازان بازدهی ۲۴ ساعت اخیر ({signals.filter((s) => (s.change24hPct ?? 0) >= 3.0).length})
+          </button>
 
           {/* Status Filter */}
           <div className="flex items-center gap-1 p-1 bg-slate-100 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg" role="group" aria-label="فیلتر وضعیت معامله">

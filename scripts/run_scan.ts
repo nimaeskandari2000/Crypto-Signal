@@ -24,7 +24,9 @@ import {
   buildInitialSignals,
 } from '../src/engine/seedData';
 import {
+  DynamicGainerCandidate,
   computeSignalWinRateMetrics,
+  discoverDynamicTopGainerSignals,
   evaluateUserExecutedTrade,
   formatForTelegramApiHtml,
   formatLockedSignalsTelegramReport,
@@ -33,7 +35,6 @@ import {
   getPersianDateLabel,
   recalibrateSignalWithLiveMarket,
   resolveBaseDashboardUrl,
-  resolveDailyDashboardLink,
   sanitizeTelegramChatId,
   sanitizeTelegramToken,
 } from '../src/engine/quantEngine';
@@ -45,6 +46,7 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const ROOT_DIR = path.resolve(__dirname, '..');
 const PUBLIC_STATE_PATH = path.join(ROOT_DIR, 'public', 'data', 'bot_state.json');
+const DOCS_STATE_PATH = path.join(ROOT_DIR, 'docs', 'data', 'bot_state.json');
 const JOURNAL_PATH = path.join(ROOT_DIR, 'data', 'journal', 'signals.jsonl');
 
 async function fetchWithTimeout(url: string, timeoutMs = 5000): Promise<Response> {
@@ -53,7 +55,7 @@ async function fetchWithTimeout(url: string, timeoutMs = 5000): Promise<Response
   try {
     return await fetch(url, {
       signal: controller.signal,
-      headers: { Accept: 'application/json', 'User-Agent': 'Mozilla/5.0 QuantPulse-GitHubActions/4.1' },
+      headers: { Accept: 'application/json', 'User-Agent': 'Mozilla/5.0 QuantPulse-GitHubActions/4.2' },
     });
   } finally {
     clearTimeout(id);
@@ -135,7 +137,6 @@ async function sendTelegram(
   try {
     let attempt = await trySend(chatId, true);
     if (!attempt.ok) {
-      // Retry without HTML parse_mode in case of entity parsing issue
       attempt = await trySend(chatId, false);
     }
     if (!attempt.ok && attempt.errText.includes('chat not found')) {
@@ -157,7 +158,7 @@ async function sendTelegram(
 }
 
 async function main() {
-  console.log('=== [QuantPulse] شروع اجرای اسکن زنده بازار، شکارچی پامپ، فارکس توکنیزه و پایش قفل سیگنال ===');
+  console.log('=== [QuantPulse] شروع اجرای اسکن زنده بازار، پیشتازان ۲۴ ساعته، افق‌های 1H/4H/1D/1W و پایش قفل سیگنال ===');
 
   let existingState: any = null;
   if (fs.existsSync(PUBLIC_STATE_PATH)) {
@@ -195,10 +196,12 @@ async function main() {
   let fearGreedIndex = Number(existingState?.macro?.fearGreedIndex) || 64;
   let fearGreedLabel = existingState?.macro?.fearGreedLabel || 'طمع متعادل (Greed)';
   const livePricesUsdt: Record<string, number> = {};
+  const liveChanges24h: Record<string, number> = {};
+  const dynamicGainerCandidates: DynamicGainerCandidate[] = [];
 
-  // 1. دریافت قیمت‌های لحظه‌ای از والکس (بدون نیاز به API Key)
+  // 1. دریافت قیمت‌های لحظه‌ای و اسکن کامل تمام بازارهای والکس برای شکار پیشتازان ۲۴ ساعت اخیر
   try {
-    const res = await fetchWithTimeout('https://api.wallex.ir/v1/markets', 4500);
+    const res = await fetchWithTimeout('https://api.wallex.ir/v1/markets', 5000);
     if (res.ok) {
       const data = (await res.json()) as any;
       const symbols = data?.result?.symbols || {};
@@ -207,31 +210,59 @@ async function main() {
         usdtIrtWallex = Math.round(lastUsdt);
       }
 
-      const wallexPairs: Record<string, string> = {
-        BTC: 'BTCUSDT',
-        ETH: 'ETHUSDT',
-        SOL: 'SOLUSDT',
-        AVAX: 'AVAXUSDT',
-        PAXG: 'PAXGUSDT',
-        ETHFI: 'ETHFIUSDT',
-        RENDER: 'RENDERUSDT',
-        ONDO: 'ONDOUSDT',
-        PEPE: 'PEPEUSDT',
-        ARB: 'ARBUSDT',
-        SLVON: 'SLVONUSDT',
-        COPXON: 'COPXONUSDT',
-        USOON: 'USOONUSDT',
-        LINK: 'LINKUSDT',
-        SUI: 'SUIUSDT',
-      };
-      for (const [base, key] of Object.entries(wallexPairs)) {
-        const p = Number(symbols?.[key]?.stats?.lastPrice);
-        if (p > 0) livePricesUsdt[base] = p;
+      // Scan ALL Wallex markets to extract live prices and top 24h gainers
+      for (const [marketKey, marketVal] of Object.entries(symbols) as [string, any][]) {
+        const base = String(marketVal?.baseAsset || '').toUpperCase();
+        const faName = String(marketVal?.faBaseAsset || base);
+        const st = marketVal?.stats || {};
+        const lastP = Number(st?.lastPrice);
+        const ch24 = Number(st?.['24h_ch']);
+        const tmnVol = Number(st?.['24h_tmnVolume'] || 0);
+
+        if (!base || !Number.isFinite(lastP) || lastP <= 0) continue;
+
+        if (marketKey.endsWith('USDT')) {
+          livePricesUsdt[base] = lastP;
+          if (Number.isFinite(ch24)) {
+            liveChanges24h[base] = ch24;
+          }
+          if (Number.isFinite(ch24) && ch24 >= 2.2) {
+            dynamicGainerCandidates.push({
+              baseAsset: base,
+              persianName: `${faName} (پیشتاز ۲۴ ساعته والکس)`,
+              priceUsdt: lastP,
+              change24hPct: ch24,
+              volumeUsd: tmnVol > 0 ? Math.round(tmnVol / usdtIrtWallex) : 55000,
+              sourceLabel: 'والکس (زنده ۲۴h)',
+            });
+          }
+        } else if (marketKey.endsWith('TMN') && !livePricesUsdt[base] && usdtIrtWallex > 50000) {
+          const approxUsdt = lastP / usdtIrtWallex;
+          if (approxUsdt > 0) {
+            livePricesUsdt[base] = approxUsdt;
+            if (Number.isFinite(ch24)) {
+              liveChanges24h[base] = ch24;
+            }
+            if (Number.isFinite(ch24) && ch24 >= 4.0 && tmnVol > 50000000) {
+              dynamicGainerCandidates.push({
+                baseAsset: base,
+                persianName: `${faName} (پیشتاز ۲۴ ساعته والکس)`,
+                priceUsdt: approxUsdt,
+                change24hPct: ch24,
+                volumeUsd: Math.round(tmnVol / usdtIrtWallex),
+                sourceLabel: 'والکس (زنده ۲۴h)',
+              });
+            }
+          }
+        }
       }
+
       if (livePricesUsdt.BTC > 10000) btcPrice = Number(livePricesUsdt.BTC.toFixed(2));
       if (livePricesUsdt.ETH > 500) ethPrice = Number(livePricesUsdt.ETH.toFixed(2));
       if (livePricesUsdt.PAXG > 1800) xauUsdOunce = Number(livePricesUsdt.PAXG.toFixed(2));
-      console.log(`[Wallex Live] تتر: ${usdtIrtWallex} تومان | انس طلا (PAXG): $${xauUsdOunce} | BTC: $${btcPrice}`);
+      console.log(
+        `[Wallex Live] تتر: ${usdtIrtWallex} تومان | انس طلا (PAXG): $${xauUsdOunce} | BTC: $${btcPrice} | ارزهای پربازده ۲۴h شناسایی‌شده: ${dynamicGainerCandidates.length}`
+      );
     }
   } catch {
     console.log(`[Wallex] استفاده از فید پشتیبان نرخ تتر: ${usdtIrtWallex} تومان`);
@@ -254,10 +285,48 @@ async function main() {
     // ignore
   }
 
+  // 1C. اسکن پیشتازان بازدهی ۲۴ ساعت اخیر بازار جهانی از CoinGecko (بدون نیاز به API Key)
+  try {
+    const cgRes = await fetchWithTimeout(
+      'https://api.coingecko.com/api/v3/coins/markets?vs_currency=usd&order=volume_desc&per_page=80&page=1&price_change_percentage=24h',
+      4500
+    );
+    if (cgRes.ok) {
+      const cgList = (await cgRes.json()) as any[];
+      if (Array.isArray(cgList)) {
+        for (const item of cgList) {
+          const sym = String(item?.symbol || '').toUpperCase();
+          const price = Number(item?.current_price);
+          const ch24 = Number(item?.price_change_percentage_24h);
+          const vol = Number(item?.total_volume || 0);
+          if (!sym || !Number.isFinite(price) || price <= 0) continue;
+          if (!livePricesUsdt[sym]) {
+            livePricesUsdt[sym] = price;
+          }
+          if (Number.isFinite(ch24) && !liveChanges24h[sym]) {
+            liveChanges24h[sym] = Number(ch24.toFixed(2));
+          }
+          if (Number.isFinite(ch24) && ch24 >= 5.0 && vol >= 1000000) {
+            dynamicGainerCandidates.push({
+              baseAsset: sym,
+              persianName: `${item?.name || sym} (پیشتاز ۲۴ ساعته بازار جهانی)`,
+              priceUsdt: price,
+              change24hPct: Number(ch24.toFixed(2)),
+              volumeUsd: Math.min(250000, Math.round(vol * 0.02)),
+              sourceLabel: 'کوین‌گکو (زنده ۲۴h)',
+            });
+          }
+        }
+      }
+    }
+  } catch {
+    // ignore
+  }
+
   // 2. دریافت نرخ زنده تمام ارزها و طلا از Kraken (بدون تحریم روی سرورهای GitHub Actions)
   try {
     const res = await fetchWithTimeout(
-      'https://api.kraken.com/0/public/Ticker?pair=XBTUSD,ETHUSD,PAXGUSD,SOLUSD,AVAXUSD,LINKUSD,SUIUSD,PEPEUSD,ARBUSD,RENDERUSD,ONDOUSD,ETHFIUSD,EURUSD',
+      'https://api.kraken.com/0/public/Ticker?pair=XBTUSD,ETHUSD,PAXGUSD,SOLUSD,AVAXUSD,LINKUSD,SUIUSD,PEPEUSD,ARBUSD,RENDERUSD,ONDOUSD,ETHFIUSD,EURUSD,BCHUSD,XLMUSD,DOTUSD,WIFUSD',
       5000
     );
     if (res.ok) {
@@ -284,6 +353,10 @@ async function main() {
       const ondo = pickPrice(['ONDOUSD']);
       const ethfi = pickPrice(['ETHFIUSD']);
       const eur = pickPrice(['ZEURZUSD', 'EURUSD']);
+      const bch = pickPrice(['BCHUSD']);
+      const xlm = pickPrice(['XXLMZUSD', 'XLMUSD']);
+      const dot = pickPrice(['DOTUSD']);
+      const wif = pickPrice(['WIFUSD']);
 
       if (btc > 10000) {
         btcPrice = Number(btc.toFixed(2));
@@ -307,6 +380,10 @@ async function main() {
       if (ondo > 0.05) livePricesUsdt.ONDO = Number(ondo.toFixed(4));
       if (ethfi > 0.05) livePricesUsdt.ETHFI = Number(ethfi.toFixed(4));
       if (eur > 0.8 && eur < 1.5) livePricesUsdt.EUR = Number(eur.toFixed(4));
+      if (bch > 50 && !livePricesUsdt.BCH) livePricesUsdt.BCH = Number(bch.toFixed(2));
+      if (xlm > 0.02 && !livePricesUsdt.XLM) livePricesUsdt.XLM = Number(xlm.toFixed(4));
+      if (dot > 0.2 && !livePricesUsdt.DOT) livePricesUsdt.DOT = Number(dot.toFixed(3));
+      if (wif > 0.02 && !livePricesUsdt.WIF) livePricesUsdt.WIF = Number(wif.toFixed(4));
 
       console.log(`[Kraken Live] BTC: $${btcPrice} | ETH: $${ethPrice} | Gold Ounce: $${xauUsdOunce} | SOL: $${livePricesUsdt.SOL || '-'}`);
     }
@@ -364,7 +441,7 @@ async function main() {
     }
   }
 
-  const signals = baseSignals.map((sig) => {
+  const calibratedBaseSignals = baseSignals.map((sig) => {
     const prev = existingSignalsMap.get(sig.id);
     const isUserLocked =
       Boolean(prev?.isLocked) &&
@@ -390,8 +467,16 @@ async function main() {
           lockedMonitoringNote: undefined,
         };
     const liveP = livePricesUsdt[mergedSig.baseAsset] ?? mergedSig.currentPrice;
-    return recalibrateSignalWithLiveMarket(mergedSig, liveP, dollarGold.usdtIrtAverage);
+    const liveCh = liveChanges24h[mergedSig.baseAsset] ?? mergedSig.change24hPct;
+    return recalibrateSignalWithLiveMarket(mergedSig, liveP, dollarGold.usdtIrtAverage, liveCh);
   });
+
+  // Dynamically discover & inject top 24h gainers from Wallex and Global markets across 1H, 4H, 1D, and 1W horizons
+  const signals = discoverDynamicTopGainerSignals(
+    dynamicGainerCandidates,
+    calibratedBaseSignals,
+    dollarGold.usdtIrtAverage
+  );
 
   // 3. پایش معاملات عملی‌شده توسط کاربر
   const rawExecutedTrades: UserExecutedTrade[] =
@@ -462,7 +547,7 @@ async function main() {
     );
   }
 
-  // 6. ارسال سیگنال‌های فعال بالای حد آستانه با قیمت زنده
+  // 6. ارسال سیگنال‌های فعال بالای حد آستانه با قیمت زنده (شامل پیشتازان ۲۴ ساعته و افق‌های روزانه/هفتگی)
   const allEligibleActive = signals.filter(
     (s) =>
       s.mode === 'live' &&
@@ -475,12 +560,18 @@ async function main() {
     ? existingState.sentSignalIds
     : [];
 
-  // Reset sentSignalIds if all eligible signals were already sent in an earlier cycle so new scans always rotate fresh alerts
   let unsentEligible = allEligibleActive.filter((s) => !sentSignalIds.includes(s.id));
   if (unsentEligible.length === 0 && allEligibleActive.length > 0) {
     sentSignalIds = [];
     unsentEligible = allEligibleActive;
   }
+
+  // Prioritize at least 1 top 24h gainer + 1 daily/weekly or core signal per scan cycle
+  const topGainerUnsent = [...unsentEligible].sort(
+    (a, b) => (b.change24hPct ?? 0) - (a.change24hPct ?? 0)
+  )[0];
+  const restUnsent = unsentEligible.filter((s) => s.id !== topGainerUnsent?.id);
+  const batchToSend = [topGainerUnsent, ...restUnsent].filter(Boolean).slice(0, 2) as Signal[];
 
   // Send Scan Radar Summary first
   await sendTelegram(
@@ -496,7 +587,7 @@ async function main() {
   );
 
   // Send top 2 individual signal cards per 15-minute scan cycle
-  for (const sig of unsentEligible.slice(0, 2)) {
+  for (const sig of batchToSend) {
     const message = formatTelegramSignalMessage(sig, settings);
     const sent = await sendTelegram(message, savedToken, savedChatId);
     if (sent) {
@@ -517,14 +608,14 @@ async function main() {
   });
   fs.appendFileSync(JOURNAL_PATH, journalEntry + '\n', 'utf-8');
 
-  // ذخیره فایل وضعیت برای GitHub Pages و داشبورد وب
+  // ذخیره فایل وضعیت برای GitHub Pages (هم در public/data و هم در docs/data)
   const nextState = {
     settings,
     dollarGold,
     signals,
     executedTrades,
     dailyReports,
-    strategies: existingState?.strategies || INITIAL_STRATEGIES,
+    strategies: INITIAL_STRATEGIES,
     postmortem: INITIAL_POSTMORTEM_TAGS,
     challenger: existingState?.challenger || INITIAL_CHALLENGER,
     sourceHealth: INITIAL_SOURCE_HEALTH,
@@ -542,9 +633,12 @@ async function main() {
     },
   };
 
+  const serializedState = JSON.stringify(nextState, null, 2);
   fs.mkdirSync(path.dirname(PUBLIC_STATE_PATH), { recursive: true });
-  fs.writeFileSync(PUBLIC_STATE_PATH, JSON.stringify(nextState, null, 2), 'utf-8');
-  console.log(`=== [QuantPulse] اسکن زنده کامل شد و در ${PUBLIC_STATE_PATH} ذخیره گردید ===`);
+  fs.writeFileSync(PUBLIC_STATE_PATH, serializedState, 'utf-8');
+  fs.mkdirSync(path.dirname(DOCS_STATE_PATH), { recursive: true });
+  fs.writeFileSync(DOCS_STATE_PATH, serializedState, 'utf-8');
+  console.log(`=== [QuantPulse] اسکن زنده کامل شد و در ${PUBLIC_STATE_PATH} و ${DOCS_STATE_PATH} ذخیره گردید ===`);
 }
 
 main().catch((err) => {

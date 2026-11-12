@@ -5,9 +5,10 @@ on:
     branches: [main, master]
     paths-ignore:
       - 'public/data/bot_state.json'
+      - 'docs/data/bot_state.json'
       - 'data/journal/**'
   schedule:
-    # اجرای خودکار هر ۱۵ دقیقه برای پایش قیمت‌های زنده، شکارچی پامپ و سیگنال‌های قفل‌شده
+    # اجرای خودکار هر ۱۵ دقیقه برای پایش قیمت‌های زنده، شکارچی پامپ ۲۴ ساعته و سیگنال‌های قفل‌شده
     - cron: '*/15 * * * *'
   workflow_dispatch:
 
@@ -41,7 +42,18 @@ jobs:
       - name: Run Quantitative Unit Tests
         run: npm run test
 
-      - name: Execute Live Crypto, Wallex, Bitpin, Pump Hunter, Forex & Gold Scan
+      - name: Build static Management Console bundle for GitHub Pages (Root + /docs)
+        run: |
+          npm run build
+          mkdir -p public/bundle docs/bundle docs/data
+          cp dist/assets/*.js public/bundle/app.js
+          cp dist/assets/*.css public/bundle/app.css
+          cp dist/assets/*.js docs/bundle/app.js
+          cp dist/assets/*.css docs/bundle/app.css
+          cp index.html 404.html
+          touch .nojekyll public/.nojekyll docs/.nojekyll
+
+      - name: Execute Live Crypto, Wallex 24h Gainers, Bitpin, Pump Hunter, Forex & Gold Scan
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN || vars.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID || vars.TELEGRAM_CHAT_ID }}
@@ -49,23 +61,18 @@ jobs:
           GITHUB_REPOSITORY: ${{ github.repository }}
         run: npm run scan
 
-      - name: Build static Management Console bundle for GitHub Pages
-        run: |
-          npm run build
-          mkdir -p public/bundle
-          cp dist/assets/*.js public/bundle/app.js
-          cp dist/assets/*.css public/bundle/app.css
-          touch .nojekyll public/.nojekyll
-
-      - name: Commit updated state & journal back to repo
+      - name: Commit updated state, /docs & journal back to repo and trigger GitHub Pages
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           git config user.name "QuantPulse Bot"
           git config user.email "bot@quantpulse.local"
           rm -f package-lock.json
           rm -rf github-workflows .playwright-cli
-          git add -A .nojekyll public/.nojekyll public/bundle/ public/data/bot_state.json data/journal/ || true
+          git add -A .nojekyll 404.html docs/ public/.nojekyll public/bundle/ public/data/bot_state.json data/journal/ || true
           if ! git diff --cached --quiet; then
-            git commit -m "chore(state): live market scan snapshot [skip ci]"
+            git commit -m "chore(state): live market scan snapshot & GitHub Pages docs sync"
             git pull --rebase --autostash origin ${{ github.ref_name || 'main' }} || true
             git push origin HEAD:${{ github.ref_name || 'main' }} || git push || true
           fi
+          gh api -X POST repos/${{ github.repository }}/pages/builds || true

@@ -5,6 +5,7 @@ import {
   computeGoldIntrinsicAndBubble,
   computeOrthogonalScore,
   detectConfirmedSwings,
+  discoverDynamicTopGainerSignals,
   evaluateCircuitBreaker,
   evaluateSignalLifecycle,
   evaluateUserExecutedTrade,
@@ -12,6 +13,7 @@ import {
   formatLockedSignalsTelegramReport,
   formatScanRadarTelegramSummary,
   formatTelegramSignalMessage,
+  getTimeframeLabelFa,
   recalibrateSignalWithLiveMarket,
   resolveDailyDashboardLink,
   sanitizeTelegramChatId,
@@ -199,25 +201,54 @@ test('Dollar & Gold Intrinsic 18K Calculator & 3-Horizon Entry Plans: accurately
   }
 });
 
-test('Live Market Recalibration, Signal Locking, High-Pump Radar, Forex Tokenized Assets & Working Dashboard Link', () => {
+test('Live Market Recalibration, Signal Locking, High-Pump 24h Top Gainers Radar, 1D/1W Timeframes & Working Dashboard Link', () => {
   const signals = buildInitialSignals(264910);
   const trades = buildInitialExecutedTrades(264910);
 
-  // Verify all 4 categories exist and all 16 initial signals are economically justified
+  // Verify all 4 categories exist and all initial signals are economically justified
   const pumpSignals = signals.filter((s) => s.category === 'high_pump');
   const forexSignals = signals.filter((s) => s.category === 'forex_tokenized');
   const coreSignals = signals.filter((s) => s.category === 'core_crypto');
   const goldSignals = signals.filter((s) => s.category === 'gold_dollar');
   const justifiedSignals = signals.filter((s) => s.isEconomicallyJustified);
+  const dailySignals = signals.filter((s) => s.timeframe === '1d');
+  const weeklySignals = signals.filter((s) => s.timeframe === '1w');
 
-  assert.equal(pumpSignals.length, 5, 'Should have 5 high-pump signals');
+  assert.ok(pumpSignals.length >= 11, `Should have at least 11 high-pump signals including 24h top gainers, got ${pumpSignals.length}`);
   assert.equal(forexSignals.length, 6, 'Should have 6 forex & tokenized RWA signals');
-  assert.ok(coreSignals.length >= 4, 'Should have core crypto signals');
-  assert.equal(goldSignals.length, 1, 'Should have PAXG/USDT gold signal');
+  assert.ok(coreSignals.length >= 5, 'Should have core crypto signals');
+  assert.ok(goldSignals.length >= 2, 'Should have PAXG/USDT 4h and 1w gold signals');
+  assert.ok(dailySignals.length >= 4, `Should have daily (1d) timeframe signals, got ${dailySignals.length}`);
+  assert.ok(weeklySignals.length >= 3, `Should have weekly (1w) timeframe signals, got ${weeklySignals.length}`);
   assert.ok(
-    justifiedSignals.length >= 16,
-    `Expected at least 16 economically justified signals, got ${justifiedSignals.length}`
+    justifiedSignals.length >= 25,
+    `Expected at least 25 economically justified signals, got ${justifiedSignals.length}`
   );
+
+  // Verify 1d and 1w Persian labels
+  assert.ok(getTimeframeLabelFa('1d').includes('روزانه'));
+  assert.ok(getTimeframeLabelFa('1w').includes('هفتگی'));
+
+  // Verify dynamic discovery of a brand new 24h top gainer coin
+  const withDynamicGainer = discoverDynamicTopGainerSignals(
+    [
+      {
+        baseAsset: 'TURBO',
+        persianName: 'توربو (TURBO)',
+        priceUsdt: 0.0094,
+        change24hPct: 48.6,
+        volume24hUsdt: 18500000,
+        sourceExchange: 'wallex',
+      },
+    ],
+    signals,
+    265000
+  );
+  const turboSig = withDynamicGainer.find((s) => s.baseAsset === 'TURBO');
+  assert.ok(turboSig, 'Dynamic 24h gainer scanner must create a signal for a surging coin');
+  assert.equal(turboSig?.isTop24hGainer, true);
+  assert.equal(turboSig?.change24hPct, 48.6);
+  assert.equal(turboSig?.isLocked, false, 'Dynamic gainer signal must never be auto-locked');
 
   // Verify Telegram Token & Chat ID Sanitization (handles Persian digits, bot prefix, quotes)
   assert.equal(
@@ -226,7 +257,7 @@ test('Live Market Recalibration, Signal Locking, High-Pump Radar, Forex Tokenize
   );
   assert.equal(sanitizeTelegramChatId(' "۹۸۷۶۵۴۳۲۱" '), '987654321');
 
-  // Verify Scan Radar Telegram Summary includes market rates and top signals
+  // Verify Scan Radar Telegram Summary includes market rates, 24h gainers, and top signals
   const radarMsg = formatScanRadarTelegramSummary({
     signals,
     btcPrice: 74500,
@@ -236,6 +267,8 @@ test('Live Market Recalibration, Signal Locking, High-Pump Radar, Forex Tokenize
     dashboardUrl: DEFAULT_BOT_SETTINGS.dashboardUrl,
   });
   assert.ok(radarMsg.includes('رادار اسکن QuantPulse'));
+  assert.ok(radarMsg.includes('پیشتازان بازدهی ۲۴ ساعت اخیر'));
+  assert.ok(radarMsg.includes('AGT/USDT'));
   assert.ok(radarMsg.includes('74,500'));
 
   // Verify NO signal is automatically locked by default

@@ -16,8 +16,10 @@ import {
   getBracketStatForScore,
 } from './src/engine/seedData';
 import {
+  LiveGainerCandidate,
   computeOrthogonalScore,
   computeSignalWinRateMetrics,
+  discoverDynamicTopGainerSignals,
   evaluateCircuitBreaker,
   evaluateUserExecutedTrade,
   formatDailyPerformanceTelegramReport,
@@ -50,7 +52,7 @@ dotenv.config();
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-const STATE_FILE_PATH = path.join(__dirname, 'data', 'bot_state_v4.json');
+const STATE_FILE_PATH = path.join(__dirname, 'data', 'bot_state_v5.json');
 
 let botSettings: BotSettings = {
   ...DEFAULT_BOT_SETTINGS,
@@ -112,7 +114,7 @@ function loadPersistedState() {
           validXau
         );
       }
-      if (parsed.signalsList && Array.isArray(parsed.signalsList) && parsed.signalsList.length >= 15) {
+      if (parsed.signalsList && Array.isArray(parsed.signalsList) && parsed.signalsList.length >= 25) {
         signalsList = parsed.signalsList.map((s: Signal) =>
           s.isLocked && s.userLockedExplicitly
             ? s
@@ -347,8 +349,9 @@ async function refreshLiveMarketFeeds(sendTelegramOnUpdate = false): Promise<voi
   let xauUsdOunce = dollarGoldSnapshot.xauUsdOunce;
 
   const liveAssetPricesUsdt: Record<string, number> = {};
+  const liveGainerCandidates: LiveGainerCandidate[] = [];
 
-  // 1. Fetch Live Prices from Wallex Public API (No API Key Required)
+  // 1. Fetch Live Prices & All 24h Top Gainers from Wallex Public API (No API Key Required)
   const t0Wallex = Date.now();
   try {
     const res = await fetchWithTimeout('https://api.wallex.ir/v1/markets', 4000);
@@ -360,28 +363,43 @@ async function refreshLiveMarketFeeds(sendTelegramOnUpdate = false): Promise<voi
         usdtIrtWallex = Math.round(usdtTmn);
       }
 
-      const wallexPairs: Record<string, string> = {
-        BTC: 'BTCUSDT',
-        ETH: 'ETHUSDT',
-        SOL: 'SOLUSDT',
-        AVAX: 'AVAXUSDT',
-        PAXG: 'PAXGUSDT',
-        ETHFI: 'ETHFIUSDT',
-        RENDER: 'RENDERUSDT',
-        ONDO: 'ONDOUSDT',
-        PEPE: 'PEPEUSDT',
-        ARB: 'ARBUSDT',
-        SLVON: 'SLVONUSDT',
-        COPXON: 'COPXONUSDT',
-        USOON: 'USOONUSDT',
-        LINK: 'LINKUSDT',
-        SUI: 'SUIUSDT',
-      };
+      for (const [pairKey, info] of Object.entries(symbols) as Array<[string, any]>) {
+        const stats = info?.stats;
+        if (!stats) continue;
+        const lastP = Number(stats.lastPrice);
+        const ch24 = Number(stats['24h_ch'] ?? 0);
+        const vol24 = Number(stats['24h_tmnVolume'] ?? stats['24h_quoteVolume'] ?? 0);
+        if (!Number.isFinite(lastP) || lastP <= 0) continue;
 
-      for (const [base, pairKey] of Object.entries(wallexPairs)) {
-        const p = Number(symbols?.[pairKey]?.stats?.lastPrice);
-        if (p > 0) {
-          liveAssetPricesUsdt[base] = p;
+        if (pairKey.endsWith('USDT')) {
+          const base = pairKey.slice(0, -4);
+          liveAssetPricesUsdt[base] = lastP;
+          if (ch24 >= 4.0) {
+            liveGainerCandidates.push({
+              baseAsset: base,
+              persianName: info?.faBaseAsset || base,
+              priceUsdt: lastP,
+              change24hPct: ch24,
+              volume24hUsdt: vol24 > 0 ? vol24 : 500000,
+              sourceExchange: 'wallex',
+            });
+          }
+        } else if (pairKey.endsWith('TMN') && pairKey !== 'USDTTMN' && usdtIrtWallex > 50000) {
+          const base = pairKey.slice(0, -3);
+          const priceUsdt = lastP / usdtIrtWallex;
+          if (!liveAssetPricesUsdt[base] && priceUsdt > 0) {
+            liveAssetPricesUsdt[base] = priceUsdt;
+          }
+          if (ch24 >= 4.5 && !liveGainerCandidates.some((c) => c.baseAsset === base)) {
+            liveGainerCandidates.push({
+              baseAsset: base,
+              persianName: info?.faBaseAsset || base,
+              priceUsdt,
+              change24hPct: ch24,
+              volume24hUsdt: vol24 / usdtIrtWallex,
+              sourceExchange: 'wallex',
+            });
+          }
         }
       }
 
@@ -399,7 +417,7 @@ async function refreshLiveMarketFeeds(sendTelegramOnUpdate = false): Promise<voi
         'wallex_api',
         'online',
         Date.now() - t0Wallex,
-        `دریافت مستقیم قیمت زنده از والکس (تتر: ${usdtIrtWallex.toLocaleString('fa-IR')} تومان)`
+        `دریافت مستقیم قیمت زنده و پیشتازان ۲۴ ساعته از والکس (تتر: ${usdtIrtWallex.toLocaleString('fa-IR')} تومان)`
       );
     } else {
       updateSourceStatus('wallex_api', 'fallback', Date.now() - t0Wallex, 'استفاده از آخرین اسنپ‌شات معتبر');
@@ -425,6 +443,42 @@ async function refreshLiveMarketFeeds(sendTelegramOnUpdate = false): Promise<voi
     } catch {
       // ignore
     }
+  }
+
+  // 1C. Fetch Global 24h Top Gainers from CoinGecko Public API
+  try {
+    const cgRes = await fetchWithTimeout(
+      'https://api.coingecko.com/api/v3/coins/markets?vs_currency=usd&order=volume_desc&per_page=80&page=1&sparkline=false&price_change_percentage=24h',
+      3800
+    );
+    if (cgRes.ok) {
+      const cgData = (await cgRes.json()) as any[];
+      if (Array.isArray(cgData)) {
+        for (const coin of cgData) {
+          const sym = String(coin?.symbol || '').toUpperCase();
+          const price = Number(coin?.current_price);
+          const ch24 = Number(coin?.price_change_percentage_24h ?? 0);
+          const vol = Number(coin?.total_volume ?? 0);
+          if (!sym || !Number.isFinite(price) || price <= 0) continue;
+          if (['USDT', 'USDC', 'DAI', 'FDUSD', 'USDE', 'TUSD'].includes(sym)) continue;
+          if (!liveAssetPricesUsdt[sym]) {
+            liveAssetPricesUsdt[sym] = price;
+          }
+          if (ch24 >= 5.0 && !liveGainerCandidates.some((c) => c.baseAsset === sym)) {
+            liveGainerCandidates.push({
+              baseAsset: sym,
+              persianName: coin?.name || sym,
+              priceUsdt: price,
+              change24hPct: Number(ch24.toFixed(2)),
+              volume24hUsdt: vol,
+              sourceExchange: 'global',
+            });
+          }
+        }
+      }
+    }
+  } catch {
+    // ignore
   }
 
   // 2. Fetch Live Global Prices from Kraken Public API (BTC, ETH, PAXG, SOL, AVAX, LINK, SUI, PEPE, ARB, RENDER, ONDO, ETHFI, EURUSD)
@@ -598,6 +652,15 @@ async function refreshLiveMarketFeeds(sendTelegramOnUpdate = false): Promise<voi
       },
     };
   });
+
+  // Dynamically discover & inject top 24h gainers across 1h, 4h, 1d, and 1w horizons
+  if (liveGainerCandidates.length > 0) {
+    signalsList = discoverDynamicTopGainerSignals(
+      liveGainerCandidates,
+      signalsList,
+      dollarGoldSnapshot.usdtIrtAverage
+    );
+  }
 
   // Monitor all active UserExecutedTrades and update their live price & PnL
   executedTradesList = executedTradesList.map((trade) => {

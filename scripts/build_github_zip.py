@@ -20,6 +20,7 @@ EXCLUDE_DIRS = {
     "build",
     "coverage",
     ".aistudio",
+    ".playwright-cli",
     "__pycache__",
 }
 
@@ -28,6 +29,7 @@ EXCLUDE_FILES = {
     ".env.local",
     ".env.production",
     "bot_state_v4.json",
+    "bot_state_v5.json",
     "quantpulse-github-repo.zip",
     ".DS_Store",
 }
